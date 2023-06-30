@@ -15,8 +15,6 @@ from losses import get_optimizer
 from models.ema import ExponentialMovingAverage
 
 import numpy as np
-import tensorflow_datasets as tfds
-import tensorflow_gan as tfgan
 import io
 import likelihood
 import controllable_generation
@@ -44,10 +42,11 @@ from sampling import (ReverseDiffusionPredictor,
 import datasets
 import argparse
 
-parser = argparse.ArgumentParser(description='Select batch size of images.')
-parser.add_argument('-b', '--batch_size', type=int, default=64, 
+parser = argparse.ArgumentParser(description='Configure batch sizes and gpu name.')
+parser.add_argument('-b', '--batch_size', type=int, default=4, 
                     help='Number of images to be generated per machine')
-parser.add_argument('-g', '--gpu', type=str, default='08', help='which GPU in list has this come from')
+parser.add_argument('-g', '--gpu', type=str, default='08', 
+                    help='which GPU in list has this come from')
 args = parser.parse_args()
 
 
@@ -76,7 +75,7 @@ elif sde.lower() == 'subvpsde':
   sampling_eps = 1e-3
 
 
-batch_size =   args.batch_size#128#@param {"type":"integer"}
+batch_size =   args.batch_size # 128#@param {"type":"integer"}
 
 config.training.batch_size = batch_size
 config.eval.batch_size = batch_size
@@ -99,9 +98,6 @@ ema.copy_to(score_model.parameters())
 
 
 
-
-
-
 #@title PC sampling
 img_size = config.data.image_size
 channels = config.data.num_channels
@@ -121,9 +117,6 @@ x, n = sampling_fn(score_model)
 
 numpy_x = x.cpu().numpy()
 
-parser = argparse.ArgumentParser(description='Run Animated Scatter plot.')
-parser.add_argument('-g', '--gpu', type=str, default='08', help='which GPU in list has this come from')
-args = parser.parse_args()
 
 np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/'
          f'{args.gpu}_samples.npz', x=numpy_x)

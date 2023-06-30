@@ -7,19 +7,23 @@ import atexit
 
 '''Generate samples from a diffusion model, this process runs '''
 
-desired_samples = 500
+desired_samples = 2000
+
+batch_size = 64
 
 # list of GPU IDs and corresponding names
 RTX_2080_ti = ['18', '19', '20', '21', '22', '28', '29', '30',]
-GTX_180 = ['15', '14', '16', '17']
+GTX_1080 = ['15', '14', '16', '17', '23', '24']
 
-gpu_ids = RTX_2080_ti + GTX_180
+gpu_ids = RTX_2080_ti + GTX_1080
 
+ray_machines = ([f'ray0{i}' for i in range(1, 10)] 
+                + [f'ray{i}' for i in range(10, 27)])
 
-gpu_names = ['gpu'+n for n in gpu_ids]
+gpu_names = ['gpu'+n for n in gpu_ids] + ray_machines
 
 previously_saved_files = ['/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
-                          + gpu_id + '_samples.npz' for gpu_id in gpu_ids]
+                          + gpu_name + '_samples.npz' for gpu_name in gpu_names]
 
 # path to your python script
 python_script = ('/homes/fms119/Projects/doc_msc_project/'
@@ -66,28 +70,35 @@ remove_old_files(previously_saved_files)
 atexit.register(cleanup)
 
 def scale_batch_size(gpu_name):
-    '''Function to double the batch size when running on the fastest GPUs'''
-    fast_gpus = ['gpu18', 'gpu19', 'gpu20', 'gpu21', 'gpu22', 'gpu28', 'gpu29', 'gpu30']
+    '''Function to double the batch size when running on the fastest available
+      GPUs'''
+    fast_gpus = ['gpu18', 'gpu19', 'gpu20', 'gpu21', 'gpu22', 'gpu28', 'gpu29', 
+                 'gpu30']
     if gpu_name in fast_gpus:
         return 2
     else:
         return 1
 
 def start_process(i, return_process=False, batch_size=64):
-    '''Starts a process on a specific GPU.'''
+    '''Starts a process on a specific GPU. Initially it creates a list of 
+    processes but once a process has been run it starts another one and returns
+    it'''
     gpu_name = gpu_names[i]
-    gpu_id = gpu_ids[i]
     command = (
         f'ssh {gpu_name} '
         '"export CUDA_HOME=/vol/cuda/12.0.0 && '
-        'export LD_LIBRARY_PATH=/vol/cuda/12.0.0/targets/x86_64-linux/lib:$LD_LIBRARY_PATH && '
+        'export LD_LIBRARY_PATH=/vol/cuda/12.0.0/'
+        # Added this line to set log level
+        'export TF_CPP_MIN_LOG_LEVEL=3 && '  
+        'targets/x86_64-linux/lib:$LD_LIBRARY_PATH && '
         f'source {conda_sh} && '
         f'conda activate {env_name} && '
         # Echo the gpu_name before running the script
         f'echo Running on {gpu_name} && '  
         # Append the GPU name to the output
-        f'python {python_script} -b {scale_batch_size() * batch_size} --gpu {gpu_id}'
-         ' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
+        f'python {python_script} '
+        f'--batch_size {scale_batch_size(gpu_name) * batch_size} --gpu {gpu_name}'
+        f' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
     )
     process = subprocess.Popen(command, shell=True)
     if return_process:
@@ -101,8 +112,8 @@ start_time = datetime.now()
 processes = []
 
 # start processes on all machines
-for i in range(len(gpu_ids)):
-    start_process(i)
+for i in range(len(gpu_names)):
+    start_process(i, batch_size=batch_size)
 
 all_images = np.zeros((1,3,32,32))
 
@@ -115,14 +126,14 @@ while processes:
             print(f"Job on GPU {gpu_names[i]} finished after {elapsed_time}")
             time.sleep(5)
             
-            file_path = '/vol/bitbucket/fms119/score_sde_pytorch/samples/' + gpu_ids[i] + '_samples.npz'
+            file_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
+                         + gpu_names[i] + '_samples.npz')
             
             try:
                 data = np.load(file_path)
             except FileNotFoundError:
-                print(f"File not found for GPU {gpu_names[i]}. DROPPING GPU FROM LIST.")
+                print(f"File not found for {gpu_names[i]}. DROPPING GPU FROM LIST.")
                 del processes[i]
-                del gpu_ids[i] 
                 del gpu_names[i] 
                 break
 
@@ -130,7 +141,7 @@ while processes:
             if validate_images(data):
                 images = data['x']
                 all_images = np.concatenate((all_images, images), 0)
-                print(f'gpu{gpu_ids[i]} has obtained good images.')
+                print(f'{gpu_names[i]} has obtained good images.')
                 print(f'Collected {all_images.shape[0] - 1} of  {desired_samples} images.')
                 
                 # If we have enough samples, break
@@ -138,10 +149,10 @@ while processes:
                     limit = True
                     break
             else:
-                print(f'gpu{gpu_ids[i]} has failed.')
+                print(f'{gpu_names[i]} has failed.')
 
             # Restart the process on the same GPU regardless of outcome
-            processes[i] = start_process(i, return_process=True)
+            processes[i] = start_process(i, return_process=True, batch_size=batch_size)
             
             try:
                 # remove the file

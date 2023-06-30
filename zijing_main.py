@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from zijing_fid_compute import fid_score
 
+
 def compute_fid(x_data, x_samples, use_cpu=False):
 
     assert type(x_data) == np.ndarray
@@ -68,7 +69,7 @@ def get_fid():
     data_samples = np.interp(data_samples, (data_samples.min(), data_samples.max()), (0, 1))
 
     data = np.load('/vol/bitbucket/fms119/score_sde_pytorch/samples/'
-                                 'all_samples_500.npz')
+                                 'all_samples_1000.npz')
     gen_samples = data['x']
     gen_samples = np.interp(gen_samples, (gen_samples.min(), gen_samples.max()), (0, 1))
 
