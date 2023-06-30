@@ -2,8 +2,57 @@ import subprocess
 import numpy as np
 import time
 from datetime import datetime
+import os
+import atexit
 
-def good_images(loaded_data, key='x'):
+'''Generate samples from a diffusion model, this process runs '''
+
+desired_samples = 500
+
+# list of GPU IDs and corresponding names
+RTX_2080_ti = ['18', '19', '20', '21', '22', '28', '29', '30',]
+GTX_180 = ['15', '14', '16', '17']
+
+gpu_ids = RTX_2080_ti + GTX_180
+
+
+gpu_names = ['gpu'+n for n in gpu_ids]
+
+previously_saved_files = ['/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
+                          + gpu_id + '_samples.npz' for gpu_id in gpu_ids]
+
+# path to your python script
+python_script = ('/homes/fms119/Projects/doc_msc_project/'
+                 'score_sde_pytorch/generate_samples.py')
+
+# path to the conda activation script
+conda_sh = "/vol/bitbucket/fms119/miniconda3/etc/profile.d/conda.sh"
+# the name of the environment to activate
+env_name = "score_sde_env"
+
+
+def remove_old_files(files):
+    '''Remove files from previous run, this is necessary because if the script
+    checks if the files exit when a process has finised and if they do not it
+    assumes there has been an error so removes the gpu from the list of 
+    available machines.'''
+    for file in files:
+        try:
+            os.remove(file)
+            # print(f"File {file} has been removed successfully")
+        except FileNotFoundError:
+            print(f"File {file} not found when doing initial deletion")
+        except Exception as e:
+            print(f"Error occurred while trying to remove {file}: {str(e)}")
+
+def cleanup():
+    '''Kill the processes created by the script so stop wasteful GPU use.'''
+    for process in processes:
+        if process.poll() is None:  # If the process hasn't ended
+            process.terminate()     # Terminate the process
+            # print(f'Process {process.pid} was terminated.')
+
+def validate_images(loaded_data, key='x'):
     '''Check if the data generation has failed on this GPU'''
     images = loaded_data['x']
     if images.reshape(-1).std()<0.2:
@@ -11,68 +60,113 @@ def good_images(loaded_data, key='x'):
     else:
         return True
 
-start_time = datetime.now()
+remove_old_files(previously_saved_files)
 
-# list of GPU IDs and corresponding names
-gpu_ids = ['19', '20', '21', '28', '29', '23', '02', '16', '08']
-gpu_names = ['gpu'+n for n in gpu_ids]
+#register the process so if this script fails generations are not left running
+atexit.register(cleanup)
 
-# path to your python script
-python_script = "/homes/fms119/Projects/doc_msc_project/score_sde_pytorch/generate_samples.py"
+def scale_batch_size(gpu_name):
+    '''Function to double the batch size when running on the fastest GPUs'''
+    fast_gpus = ['gpu18', 'gpu19', 'gpu20', 'gpu21', 'gpu22', 'gpu28', 'gpu29', 'gpu30']
+    if gpu_name in fast_gpus:
+        return 2
+    else:
+        return 1
 
-# path to the conda activation script
-conda_sh = "/vol/bitbucket/fms119/miniconda3/etc/profile.d/conda.sh"
-# the name of the environment to activate
-env_name = "score_sde_env"
-
-# list to hold the subprocesses
-processes = []
-
-# loop over your machines
-for i, gpu_name in enumerate(gpu_names):
-    print(f"Running job on {gpu_name} with GPU {gpu_ids[i]}")
-    # ssh into the machine and run the command
+def start_process(i, return_process=False, batch_size=64):
+    '''Starts a process on a specific GPU.'''
+    gpu_name = gpu_names[i]
+    gpu_id = gpu_ids[i]
     command = (
         f'ssh {gpu_name} '
         '"export CUDA_HOME=/vol/cuda/12.0.0 && '
         'export LD_LIBRARY_PATH=/vol/cuda/12.0.0/targets/x86_64-linux/lib:$LD_LIBRARY_PATH && '
         f'source {conda_sh} && '
         f'conda activate {env_name} && '
-        f'python {python_script} --gpu {gpu_ids[i]}"'
+        # Echo the gpu_name before running the script
+        f'echo Running on {gpu_name} && '  
+        # Append the GPU name to the output
+        f'python {python_script} -b {scale_batch_size() * batch_size} --gpu {gpu_id}'
+         ' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
     )
     process = subprocess.Popen(command, shell=True)
-    processes.append(process)
+    if return_process:
+        return process
+    else:
+        processes.append(process)
+
+start_time = datetime.now()
+
+# list to hold the subprocesses
+processes = []
+
+# start processes on all machines
+for i in range(len(gpu_ids)):
+    start_process(i)
+
+all_images = np.zeros((1,3,32,32))
 
 # monitor processes
+limit = False
 while processes:
     for i, process in enumerate(processes):
         if process.poll() is not None:  # the process has ended
             elapsed_time = datetime.now() - start_time
             print(f"Job on GPU {gpu_names[i]} finished after {elapsed_time}")
-            del processes[i]
-            del gpu_names[i]
-            break  # break the for loop and start from the first process again
+            time.sleep(5)
+            
+            file_path = '/vol/bitbucket/fms119/score_sde_pytorch/samples/' + gpu_ids[i] + '_samples.npz'
+            
+            try:
+                data = np.load(file_path)
+            except FileNotFoundError:
+                print(f"File not found for GPU {gpu_names[i]}. DROPPING GPU FROM LIST.")
+                del processes[i]
+                del gpu_ids[i] 
+                del gpu_names[i] 
+                break
+
+            # If the images are good, save them
+            if validate_images(data):
+                images = data['x']
+                all_images = np.concatenate((all_images, images), 0)
+                print(f'gpu{gpu_ids[i]} has obtained good images.')
+                print(f'Collected {all_images.shape[0] - 1} of  {desired_samples} images.')
+                
+                # If we have enough samples, break
+                if all_images.shape[0]>=desired_samples:
+                    limit = True
+                    break
+            else:
+                print(f'gpu{gpu_ids[i]} has failed.')
+
+            # Restart the process on the same GPU regardless of outcome
+            processes[i] = start_process(i, return_process=True)
+            
+            try:
+                # remove the file
+                os.remove(file_path)
+                print(f"File {file_path} has been removed successfully")
+            except FileNotFoundError:
+                print(f"File {file_path} not found")
+
+    if limit:
+        break
     time.sleep(10)  # wait a 10 seconds before checking the processes again
 
-
-
-
-data = np.load('/vol/bitbucket/fms119/score_sde_pytorch/samples/' + gpu_ids[0] + '_samples.npz')
-
-
-all_images = np.zeros((1,3,32,32))
-
-for number in gpu_ids:
-    data = np.load('/vol/bitbucket/fms119/score_sde_pytorch/samples/' + number + '_samples.npz')
-    if good_images(data):
-        images = data['x']
-        all_images = np.concatenate((all_images, images), 0)
-    else:
-        print(f'gpu{number} has failed.')
-
-all_images = all_images[1:, :, :, :]
+all_images = all_images[1:desired_samples+1, :, :, :]
 
 print(f'The final number of good images is {all_images.shape[0]}')
 
 np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/'
          f'all_samples_{all_images.shape[0]}.npz', x=all_images)
+
+cleanup()
+
+time.sleep(10)
+
+for i, process in enumerate(processes):
+    if process.poll() is None:  # Process is still running
+        print(f"Process {i} on GPU {gpu_names[i]} has not been terminated.")
+
+

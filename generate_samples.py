@@ -42,10 +42,13 @@ from sampling import (ReverseDiffusionPredictor,
                       NonePredictor,
                       AnnealedLangevinDynamics)
 import datasets
+import argparse
 
-
-
-
+parser = argparse.ArgumentParser(description='Select batch size of images.')
+parser.add_argument('-b', '--batch_size', type=int, default=64, 
+                    help='Number of images to be generated per machine')
+parser.add_argument('-g', '--gpu', type=str, default='08', help='which GPU in list has this come from')
+args = parser.parse_args()
 
 
 # @title Load the score-based model
@@ -72,7 +75,9 @@ elif sde.lower() == 'subvpsde':
   sde = subVPSDE(beta_min=config.model.beta_min, beta_max=config.model.beta_max, N=config.model.num_scales)
   sampling_eps = 1e-3
 
-batch_size =   100#@param {"type":"integer"}
+
+batch_size =   args.batch_size#128#@param {"type":"integer"}
+
 config.training.batch_size = batch_size
 config.eval.batch_size = batch_size
 

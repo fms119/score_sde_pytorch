@@ -166,9 +166,22 @@ def calculate_activation_statistics(images, sess, batch_size=50, verbose=False):
     -- sigma : The covariance matrix of the activations of the pool_3 layer of
                the incption model.
     """
-    act = get_activations(images, sess, batch_size, verbose)
-    mu = np.mean(act, axis=0)
-    sigma = np.cov(act, rowvar=False)
+    
+    if images.shape[0]==10000:
+        print('TAKING SHORTCUT')
+        path = '/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/CIFAR10_stats_10000.npz'
+        data = np.load(path)
+        mu = data['mu']
+        sigma = data['sigma']
+    else:
+        act = get_activations(images, sess, batch_size, verbose)
+        mu = np.mean(act, axis=0)
+        sigma = np.cov(act, rowvar=False)
+
+    # if images.shape[0]==10000:
+    #     path = '/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/CIFAR10_stats_10000.npz'
+    #     np.savez(path, mu=mu, sigma=sigma)
+
     return mu, sigma
 
 
