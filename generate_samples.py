@@ -43,8 +43,6 @@ from sampling import (ReverseDiffusionPredictor,
 import datasets
 import argparse
 
-print(3)
-
 parser = argparse.ArgumentParser(description='Configure batch sizes and gpu name.')
 parser.add_argument('-b', '--batch_size', type=int, default=4, 
                     help='Number of images to be generated per machine')
@@ -52,9 +50,6 @@ parser.add_argument('-g', '--gpu', type=str, default='ray04',
                     help='which GPU in list has this come from')
 args = parser.parse_args()
 
-print(f'running job on {args.gpu}')
-
-print(4)
 
 # @title Load the score-based model
 sde = 'VESDE' #@param ['VESDE', 'VPSDE', 'subVPSDE'] {"type": "string"}

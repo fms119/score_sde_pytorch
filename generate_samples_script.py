@@ -88,10 +88,9 @@ def start_process(i, return_process=False, batch_size=64):
         'export LD_LIBRARY_PATH=/vol/cuda/12.0.0/targets/x86_64-linux/lib:$LD_LIBRARY_PATH && '
         # Added this line to set log level
         'export TF_CPP_MIN_LOG_LEVEL=3 && '  
-        # 'targets/x86_64-linux/lib:$LD_LIBRARY_PATH && '
         f'source {conda_sh} && '
         f'conda activate {env_name} && '
-        # Echo the gpu_name before  running the script
+        # Echo the gpu_name before running the script
         f'echo Running on {gpu_name} && '  
         # Append the GPU name to the output
         f'python {python_script} '
