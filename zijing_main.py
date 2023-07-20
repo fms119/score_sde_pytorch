@@ -26,7 +26,6 @@ def compute_fid(x_data, x_samples, use_cpu=False):
     assert np.max(x_samples) < 255.+1e-4
     assert np.mean(x_samples) > 1.
 
-
     if use_cpu:
         def create_session():
             import tensorflow.compat.v1 as tf
@@ -69,7 +68,7 @@ def get_fid():
     data_samples = np.interp(data_samples, (data_samples.min(), data_samples.max()), (0, 1))
 
     data = np.load('/vol/bitbucket/fms119/score_sde_pytorch/samples/'
-                                 'all_samples_1000.npz')
+                                 'all_samples_300.npz')
     gen_samples = data['x']
     gen_samples = np.interp(gen_samples, (gen_samples.min(), gen_samples.max()), (0, 1))
 

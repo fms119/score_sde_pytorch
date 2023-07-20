@@ -1,5 +1,6 @@
 import argparse
 
+from generate_samples_script import validate_images
 
 import matplotlib.pyplot as plt
 # import io
@@ -42,13 +43,18 @@ from sampling import (ReverseDiffusionPredictor,
 import datasets
 import argparse
 
+print(3)
+
 parser = argparse.ArgumentParser(description='Configure batch sizes and gpu name.')
 parser.add_argument('-b', '--batch_size', type=int, default=4, 
                     help='Number of images to be generated per machine')
-parser.add_argument('-g', '--gpu', type=str, default='08', 
+parser.add_argument('-g', '--gpu', type=str, default='ray04', 
                     help='which GPU in list has this come from')
 args = parser.parse_args()
 
+print(f'running job on {args.gpu}')
+
+print(4)
 
 # @title Load the score-based model
 sde = 'VESDE' #@param ['VESDE', 'VPSDE', 'subVPSDE'] {"type": "string"}
@@ -81,6 +87,8 @@ config.training.batch_size = batch_size
 config.eval.batch_size = batch_size
 
 random_seed = 0 #@param {"type": "integer"}
+# Stops creation of identical imaged from different machines 
+random_seed = np.random.randint(0, 99999) 
 
 sigmas = mutils.get_sigmas(config)
 scaler = datasets.get_data_scaler(config)
@@ -114,9 +122,15 @@ sampling_fn = sampling.get_pc_sampler(sde, shape, predictor, corrector,
                                       eps=sampling_eps, device=config.device)
 
 x, n = sampling_fn(score_model)
-
 numpy_x = x.cpu().numpy()
+    
+while not validate_images({'x':numpy_x}):
+  
+  print('caught failed before saving files')
+  print(f'std: {numpy_x.reshape(-1).std()}')
 
+  x, n = sampling_fn(score_model)
+  numpy_x = x.cpu().numpy()
 
 np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/'
          f'{args.gpu}_samples.npz', x=numpy_x)
