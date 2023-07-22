@@ -7,12 +7,12 @@ import atexit
 
 '''Generate samples from a diffusion model, this process runs '''
 
-desired_samples = 1000
+desired_samples = 100
 
-batch_size = 64
+batch_size = 16
 
 # list of GPU IDs and corresponding names
-GTX_TITAN_X = [f'0{i}' for i in range(1,10)]
+GTX_TITAN_X = [f'0{i}' for i in range(1,10)] + ['10', '11', '12', '13']
 RTX_2080_ti = ['18', '19', '20', '21', '22', '28', '29', '30',]
 GTX_1080 = ['15', '14', '16', '17', '23', '24']
 
@@ -53,9 +53,12 @@ def remove_old_files(files):
 
 def cleanup():
     '''Kill the processes created by the script so stop wasteful GPU use.'''
-    for process in processes:
+    n = len(processes)
+    for i, process in enumerate(processes):
         if process.poll() is None:  # If the process hasn't ended
+            print(f'Killed {i} of {n}')
             process.terminate()     # Terminate the process
+        
 
 def validate_images(loaded_data, key='x'):
     '''Check if the data generation has failed on this GPU'''
@@ -103,82 +106,82 @@ def start_process(i, return_process=False, batch_size=64):
     else:
         processes.append(process)
 
-if __name__ == '__main__':    
-    remove_old_files(previously_saved_files)
+remove_old_files(previously_saved_files)
 
-    #register the process so if this script fails generations are not left running
-    atexit.register(cleanup)
+#register the process so if this script fails generations are not left running
+atexit.register(cleanup)
 
-    start_time = datetime.now()
+start_time = datetime.now()
 
-    # list to hold the subprocesses
-    processes = []
+# list to hold the subprocesses
+processes = []
 
-    print(f'The length of gpu_names is {len(gpu_names)}')
+print(f'The length of gpu_names is {len(gpu_names)}')
 
-    # start processes on all machines
-    for i in range(len(gpu_names)):
-        print('starting processes')
-        start_process(i, batch_size=batch_size)
+# start processes on all machines
+for i in range(len(gpu_names)):
+    start_process(i, batch_size=batch_size)
 
-    all_images = np.zeros((1,3,32,32))
+all_images = np.zeros((1,3,32,32))
 
-    # monitor processes
-    limit = False
-    while processes:
-        for i, process in enumerate(processes):
-            if process.poll() is not None:  # the process has ended
-                elapsed_time = datetime.now() - start_time
-                print(f"Job on GPU {gpu_names[i]} finished after {elapsed_time}")
-                time.sleep(5)
+# monitor processes
+limit = False
+while processes:
+    for i, process in enumerate(processes):
+        if process.poll() is not None:  # the process has ended
+            elapsed_time = datetime.now() - start_time
+            print(f"Job on GPU {gpu_names[i]} finished after {elapsed_time}")
+            time.sleep(5)
+            
+            file_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
+                        + gpu_names[i] + '_samples.npz')
+            
+            try:
+                data = np.load(file_path)
+            except FileNotFoundError:
+                print(f"File not found for {gpu_names[i]}. DROPPING GPU FROM LIST.")
+                del processes[i]
+                del gpu_names[i] 
+                break
+
+            # If the images are good, save them
+            if validate_images(data):
+                images = data['x']
+                all_images = np.concatenate((all_images, images), 0)
+                print(f'{gpu_names[i]} has obtained good images.')
+                print(f'Collected {all_images.shape[0] - 1} of  {desired_samples} images.')
+                print(f'Maximum: {all_images.max()}')
+                print(f'Minimum: {all_images.min()}')
                 
-                file_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
-                            + gpu_names[i] + '_samples.npz')
-                
-                try:
-                    data = np.load(file_path)
-                except FileNotFoundError:
-                    print(f"File not found for {gpu_names[i]}. DROPPING GPU FROM LIST.")
-                    del processes[i]
-                    del gpu_names[i] 
+                # If we have enough samples, break
+                if all_images.shape[0]>=desired_samples:
+                    limit = True
                     break
+            else:
+                print(f'{gpu_names[i]} has failed.')
 
-                # If the images are good, save them
-                if validate_images(data):
-                    images = data['x']
-                    all_images = np.concatenate((all_images, images), 0)
-                    print(f'{gpu_names[i]} has obtained good images.')
-                    print(f'Collected {all_images.shape[0] - 1} of  {desired_samples} images.')
-                    print(f'Maximum: {all_images.max()}')
-                    print(f'Minimum: {all_images.min()}')
-                    
-                    # If we have enough samples, break
-                    if all_images.shape[0]>=desired_samples:
-                        limit = True
-                        break
-                else:
-                    print(f'{gpu_names[i]} has failed.')
+            # Restart the process on the same GPU regardless of outcome
+            processes[i] = start_process(i, return_process=True, batch_size=batch_size)
+            
+            try:
+                # remove the file
+                os.remove(file_path)
+                print(f"File {file_path} has been removed successfully")
+            except FileNotFoundError:
+                print(f"File {file_path} not found")
 
-                # Restart the process on the same GPU regardless of outcome
-                processes[i] = start_process(i, return_process=True, batch_size=batch_size)
-                
-                try:
-                    # remove the file
-                    os.remove(file_path)
-                    print(f"File {file_path} has been removed successfully")
-                except FileNotFoundError:
-                    print(f"File {file_path} not found")
+    if limit:
+        break
+    time.sleep(10)  # wait a 10 seconds before checking the processes again
 
-        if limit:
-            break
-        time.sleep(10)  # wait a 10 seconds before checking the processes again
+all_images = all_images[1:desired_samples+1, :, :, :]
 
-    all_images = all_images[1:desired_samples+1, :, :, :]
+print(f'The final number of good images is {all_images.shape[0]}')
 
-    print(f'The final number of good images is {all_images.shape[0]}')
+np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/'
+        f'all_samples_{all_images.shape[0]}.npz', images=all_images)
 
-    np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/'
-            f'all_samples_{all_images.shape[0]}.npz', images=all_images)
-
-    cleanup()
+print(f'The length of processes if {len(processes)}')
+cleanup()
+cleanup()
 

@@ -6,6 +6,9 @@ tensorflow==2.4.0
 tensorflow-addons==0.12.0
 tensorboard==2.4.0
 absl-py==0.10.0
-torch>=1.7.0
+torch==1.7.0
 torchvision
-ninja
+ninja==1.10.0
+tensorflow-probability==0.12.2
+scipy==1.6.0
+ipykernel 

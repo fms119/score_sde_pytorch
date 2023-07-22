@@ -3,6 +3,10 @@ import tensorflow_datasets as tfds
 import numpy as np
 
 sizes = [500,  2000,  4000,  6000,  8000, 10001, 15000,  1000, 12500, 20000]
+sizes = [6000,  8000, 10001, 15000,  1000, 12500, 20000]
+sizes = [15000,  1000, 12500, 20000]
+sizes = [12500, 20000]
+sizes = [20000]
 
 from zijing_main import *
 
@@ -17,10 +21,12 @@ def get_fid(file_path):
     fid = compute_fid_nchw(data_samples, gen_samples)
     return fid
 
-fid_trails = np.zeros((len(sizes),5))
+fid_trails_data = np.load('/vol/bitbucket/fms119/score_sde_pytorch/samples/cifar10_true_trials/trial_fids.npz')
+fid_trails = fid_trails_data['fid_trails']
 
 for i, n in enumerate(sizes):
     for j, trial in enumerate(['a', 'b', 'c', 'd', 'e']):
+        I = i + 9
         print(n)
         print(trial)
         print(f'{i} out of {len(sizes)}')
@@ -30,5 +36,6 @@ for i, n in enumerate(sizes):
         
         print(fid)
         
-        fid_trails[i, j] = fid
+        fid_trails[I, j] = fid
+        # You should always be saving progess during experiments like this.
         np.savez('/vol/bitbucket/fms119/score_sde_pytorch/samples/cifar10_true_trials/trial_fids.npz', fid_trails=fid_trails)
