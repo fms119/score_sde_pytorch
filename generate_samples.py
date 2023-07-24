@@ -1,6 +1,6 @@
 import argparse
 
-from generate_samples_script import validate_images
+from generate_samples_functions import validate_images
 
 import matplotlib.pyplot as plt
 # import io
@@ -21,6 +21,7 @@ import likelihood
 import controllable_generation
 from utils import restore_checkpoint
 
+print('Importing')
 
 import models
 from models import utils as mutils
@@ -30,6 +31,9 @@ from models import ddpm as ddpm_model
 from models import layerspp
 from models import layers
 from models import normalization
+
+print('Unlocked')
+
 import sampling
 from likelihood import get_likelihood_fn
 from sde_lib import VESDE, VPSDE, subVPSDE
@@ -43,7 +47,9 @@ from sampling import (ReverseDiffusionPredictor,
 import datasets
 import argparse
 
-parser = argparse.ArgumentParser(description='Configure batch sizes and gpu name.')
+parser = argparse.ArgumentParser(
+  description='Configure batch sizes and gpu name.'
+  )
 parser.add_argument('-b', '--batch_size', type=int, default=4, 
                     help='Number of images to be generated per machine')
 parser.add_argument('-g', '--gpu', type=str, default='ray04', 

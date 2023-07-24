@@ -5,11 +5,15 @@ from datetime import datetime
 import os
 import atexit
 
+from generate_samples_functions import * 
+
 '''Generate samples from a diffusion model, this process runs '''
 
-desired_samples = 100
+print(datetime.now())
 
-batch_size = 16
+desired_samples = 400
+
+batch_size = 64
 
 # list of GPU IDs and corresponding names
 GTX_TITAN_X = [f'0{i}' for i in range(1,10)] + ['10', '11', '12', '13']
@@ -24,8 +28,12 @@ ray_machines = ([f'ray0{i}' for i in range(1, 4)]
 
 gpu_names = ['gpu'+n for n in gpu_ids] + ray_machines
 
-previously_saved_files = ['/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
-                          + gpu_name + '_samples.npz' for gpu_name in gpu_names]
+gpu_names =  ray_machines[13:23]
+
+previously_saved_files = [
+    '/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
+    + gpu_name + '_samples.npz' for gpu_name in gpu_names
+    ]
 
 # path to your python script
 python_script = ('/homes/fms119/Projects/doc_msc_project/'
@@ -36,91 +44,28 @@ conda_sh = "/vol/bitbucket/fms119/miniconda3/etc/profile.d/conda.sh"
 # the name of the environment to activate
 env_name = "score_sde_env"
 
-
-def remove_old_files(files):
-    '''Remove files from previous run, this is necessary because if the script
-    checks if the files exist when a process has finished and if they do not it
-    assumes there has been an error so removes the gpu from the list of 
-    available machines.'''
-    for file in files:
-        try:
-            os.remove(file)
-            # print(f"File {file} has been removed successfully")
-        except FileNotFoundError:
-            print(f"File {file} not found when doing initial deletion")
-        except Exception as e:
-            print(f"Error occurred while trying to remove {file}: {str(e)}")
-
-def cleanup():
-    '''Kill the processes created by the script so stop wasteful GPU use.'''
-    n = len(processes)
-    for i, process in enumerate(processes):
-        if process.poll() is None:  # If the process hasn't ended
-            print(f'Killed {i} of {n}')
-            process.terminate()     # Terminate the process
-        
-
-def validate_images(loaded_data, key='x'):
-    '''Check if the data generation has failed on this GPU'''
-    images = loaded_data[key]
-    if images.reshape(-1).std()<0.2:
-        return False
-    elif np.isnan(images.reshape(-1).std()):
-        return False
-    else:
-        return True
-
-def scale_batch_size(gpu_name):
-    '''Function to double the batch size when running on the fastest available
-      GPUs'''
-    fast_gpus = ['gpu18', 'gpu19', 'gpu20', 'gpu21', 'gpu22', 'gpu28', 'gpu29', 
-                 'gpu30']
-    if gpu_name in fast_gpus:
-        return 2
-    else:
-        return 1
-
-def start_process(i, return_process=False, batch_size=64):
-    '''Starts a process on a specific GPU. Initially it creates a list of 
-    processes but once a process has been run it starts another one and returns
-    it'''
-    gpu_name = gpu_names[i]
-    command = (
-        f'ssh {gpu_name} '
-        '"export CUDA_HOME=/vol/cuda/12.0.0 && '
-        'export LD_LIBRARY_PATH=/vol/cuda/12.0.0/targets/x86_64-linux/lib:$LD_LIBRARY_PATH && '
-        # Added this line to set log level
-        'export TF_CPP_MIN_LOG_LEVEL=3 && '  
-        f'source {conda_sh} && '
-        f'conda activate {env_name} && '
-        # Echo the gpu_name before running the script
-        f'echo Running on {gpu_name} && '  
-        # Append the GPU name to the output
-        f'python {python_script} '
-        f'--batch_size {scale_batch_size(gpu_name) * batch_size} --gpu {gpu_name}'
-        f' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
-    )
-    process = subprocess.Popen(command, shell=True)
-    if return_process:
-        return process
-    else:
-        processes.append(process)
-
 remove_old_files(previously_saved_files)
-
-#register the process so if this script fails generations are not left running
-atexit.register(cleanup)
 
 start_time = datetime.now()
 
 # list to hold the subprocesses
 processes = []
 
+#register the process so if this script fails generations are not left running
+# define a wrapper function that takes no arguments
+def cleanup_wrapper():
+    global processes
+    cleanup(processes)
+
+# register the wrapper function to be run at exit
+atexit.register(cleanup_wrapper)
+
 print(f'The length of gpu_names is {len(gpu_names)}')
 
 # start processes on all machines
 for i in range(len(gpu_names)):
-    start_process(i, batch_size=batch_size)
+    start_process(i, gpu_names, conda_sh, env_name, python_script,
+                  processes, batch_size=batch_size)
 
 all_images = np.zeros((1,3,32,32))
 
@@ -159,9 +104,15 @@ while processes:
                     break
             else:
                 print(f'{gpu_names[i]} has failed.')
-
+            
+            print(f'[{gpu_names[i]}] The initial PID is {processes[i].pid}')
             # Restart the process on the same GPU regardless of outcome
-            processes[i] = start_process(i, return_process=True, batch_size=batch_size)
+            processes[i] = start_process(i, gpu_names, conda_sh, 
+                                         env_name, python_script, 
+                                         processes, return_process=True, 
+                                         batch_size=batch_size)
+            
+            print(f'[{gpu_names[i]}] The next PID is {processes[i].pid}')
             
             try:
                 # remove the file
@@ -182,6 +133,10 @@ np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/'
         f'all_samples_{all_images.shape[0]}.npz', images=all_images)
 
 print(f'The length of processes if {len(processes)}')
-cleanup()
-cleanup()
 
+cleanup(processes)
+
+time.sleep(20)
+
+for gpu_name in gpu_names:
+    kill_processes(gpu_name)
