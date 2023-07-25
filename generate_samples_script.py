@@ -11,9 +11,10 @@ from generate_samples_functions import *
 
 print(datetime.now())
 
-desired_samples = 400
+desired_samples = 10000
 
-batch_size = 64
+# I think I could get away with doubling this
+batch_size = 256
 
 # list of GPU IDs and corresponding names
 GTX_TITAN_X = [f'0{i}' for i in range(1,10)] + ['10', '11', '12', '13']
@@ -27,8 +28,6 @@ ray_machines = ([f'ray0{i}' for i in range(1, 4)]
                 + [f'ray{i}' for i in range(10, 27)])
 
 gpu_names = ['gpu'+n for n in gpu_ids] + ray_machines
-
-gpu_names =  ray_machines[13:23]
 
 previously_saved_files = [
     '/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
@@ -111,7 +110,6 @@ while processes:
                                          env_name, python_script, 
                                          processes, return_process=True, 
                                          batch_size=batch_size)
-            
             print(f'[{gpu_names[i]}] The next PID is {processes[i].pid}')
             
             try:
