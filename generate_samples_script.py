@@ -11,9 +11,8 @@ from generate_samples_functions import *
 
 print(datetime.now())
 
-desired_samples = 10000
+desired_samples = 5001
 
-# I think I could get away with doubling this
 batch_size = 128
 
 # list of GPU IDs and corresponding names
@@ -79,8 +78,9 @@ while processes:
             file_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
                         + gpu_names[i] + '_samples.npz')
 
-            # Try to load the data file for up to 20 seconds
-            for t in range(20):
+            # Try to load the data file for up to 5 seconds
+            delay_time = 5
+            for t in range(delay_time):
                 try:
                     data = np.load(file_path)  # Try to load the data file
                     print(f'Found file after {t} seconds')
