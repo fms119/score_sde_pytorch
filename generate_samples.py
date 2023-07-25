@@ -16,18 +16,13 @@ from losses import get_optimizer
 from models.ema import ExponentialMovingAverage
 
 import numpy as np
-import io
-import likelihood
-import controllable_generation
 from utils import restore_checkpoint
 
 print('Importing')
 
 import models
 from models import utils as mutils
-from models import ncsnv2
 from models import ncsnpp
-from models import ddpm as ddpm_model
 from models import layerspp
 from models import layers
 from models import normalization
@@ -50,9 +45,9 @@ import argparse
 parser = argparse.ArgumentParser(
   description='Configure batch sizes and gpu name.'
   )
-parser.add_argument('-b', '--batch_size', type=int, default=4, 
+parser.add_argument('-b', '--batch_size', type=int, default=128, 
                     help='Number of images to be generated per machine')
-parser.add_argument('-g', '--gpu', type=str, default='ray04', 
+parser.add_argument('-g', '--gpu', type=str, default='texel04', 
                     help='which GPU in list has this come from')
 args = parser.parse_args()
 
@@ -68,18 +63,6 @@ if sde.lower() == 'vesde':
   config = configs.get_config()  
   sde = VESDE(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max, N=config.model.num_scales)
   sampling_eps = 1e-5
-elif sde.lower() == 'vpsde':
-  from configs.vp import cifar10_ddpmpp_continuous as configs  
-  ckpt_filename = "/vol/bitbucket/fms119/score_sde_pytorch/exp/vp/cifar10_ddpmpp_continuous/checkpoint_8.pth"
-  config = configs.get_config()
-  sde = VPSDE(beta_min=config.model.beta_min, beta_max=config.model.beta_max, N=config.model.num_scales)
-  sampling_eps = 1e-3
-elif sde.lower() == 'subvpsde':
-  from configs.subvp import cifar10_ddpmpp_continuous as configsls
-  ckpt_filename = "/vol/bitbucket/fms119/score_sde_pytorch/exp/subvp/cifar10_ddpmpp_continuous/checkpoint_15.pth"
-  config = configs.get_config()
-  sde = subVPSDE(beta_min=config.model.beta_min, beta_max=config.model.beta_max, N=config.model.num_scales)
-  sampling_eps = 1e-3
 
 
 batch_size =   args.batch_size # 128#@param {"type":"integer"}
