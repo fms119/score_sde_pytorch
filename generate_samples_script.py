@@ -14,7 +14,7 @@ print(datetime.now())
 desired_samples = 10000
 
 # I think I could get away with doubling this
-batch_size = 256
+batch_size = 128
 
 # list of GPU IDs and corresponding names
 GTX_TITAN_X = [f'0{i}' for i in range(1,10)] + ['10', '11', '12', '13']
@@ -75,11 +75,20 @@ while processes:
         if process.poll() is not None:  # the process has ended
             elapsed_time = datetime.now() - start_time
             print(f"Job on GPU {gpu_names[i]} finished after {elapsed_time}")
-            time.sleep(5)
-            
+                        
             file_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
                         + gpu_names[i] + '_samples.npz')
-            
+
+            # Try to load the data file for up to 20 seconds
+            for t in range(20):
+                try:
+                    data = np.load(file_path)  # Try to load the data file
+                    print(f'Found file after {t} seconds')
+                    break  # If the file was loaded successfully, break out of the loop
+                except:
+                    pass  # If the file could not be loaded, ignore the exception and try again
+                time.sleep(1)  # Wait for a second before trying again
+
             try:
                 data = np.load(file_path)
             except FileNotFoundError:
