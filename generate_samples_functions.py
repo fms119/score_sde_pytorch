@@ -23,16 +23,6 @@ def cleanup(processes):
     n = len(processes)
     for i, process in enumerate(processes):
         if process.poll() is None:  # If the process hasn't ended
-            print(f'Killed {i} of {n}')
-            process.terminate()     # Terminate the process
-            time.sleep(3)
-
-
-def cleanup(processes):
-    '''Kill the processes created by the script so stop wasteful GPU use.'''
-    n = len(processes)
-    for i, process in enumerate(processes):
-        if process.poll() is None:  # If the process hasn't ended
             process.terminate()     # Try to terminate the process
             time.sleep(1)           # Wait for a moment to let the process terminate
             if process.poll() is None:
@@ -84,6 +74,7 @@ def start_process(i, gpu_names, conda_sh, env_name, python_script, processes,
         # Echo the gpu_name before running the script
         f'echo Running on {gpu_name} && '  
         # Append the GPU name to the output
+        # 'nice -n 1' 
         f'nice -n 1 python {python_script} '
         f'--batch_size {scale_batch_size(gpu_name) * batch_size} --gpu {gpu_name}'
         f' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  

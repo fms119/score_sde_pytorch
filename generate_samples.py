@@ -47,7 +47,7 @@ parser = argparse.ArgumentParser(
   )
 parser.add_argument('-b', '--batch_size', type=int, default=128, 
                     help='Number of images to be generated per machine')
-parser.add_argument('-g', '--gpu', type=str, default='texel04', 
+parser.add_argument('-g', '--gpu', type=str, default='texel05', 
                     help='which GPU in list has this come from')
 args = parser.parse_args()
 

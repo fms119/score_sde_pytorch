@@ -11,9 +11,9 @@ from generate_samples_functions import *
 
 print(datetime.now())
 
-desired_samples = 5001
+desired_samples = 5000
 
-batch_size = 128
+batch_size = 64
 
 # list of GPU IDs and corresponding names
 GTX_TITAN_X = [f'0{i}' for i in range(1,10)] + ['10', '11', '12', '13']
@@ -26,7 +26,11 @@ ray_machines = ([f'ray0{i}' for i in range(1, 4)]
                 + [f'ray0{i}' for i in range(6, 10)]
                 + [f'ray{i}' for i in range(10, 27)])
 
-gpu_names = ['gpu'+n for n in gpu_ids] + ray_machines
+gpu_names = ray_machines + ['gpu'+n for n in gpu_ids]
+
+# Could potentially use the ssh_gpu_checker to select all machines with 1 job
+#   running, put these into a list and then run the jobs on this. Then batch
+#   size can be very large.
 
 previously_saved_files = [
     '/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
@@ -60,6 +64,11 @@ atexit.register(cleanup_wrapper)
 
 print(f'The length of gpu_names is {len(gpu_names)}')
 
+# Testing to see if shuffling the gpu names has an effect on rays being left 
+# out
+np.random.shuffle(gpu_names)
+print(gpu_names)
+
 # start processes on all machines
 for i in range(len(gpu_names)):
     start_process(i, gpu_names, conda_sh, env_name, python_script,
@@ -69,17 +78,23 @@ all_images = np.zeros((1,3,32,32))
 
 # monitor processes
 limit = False
+
+loops = 0
+
 while processes:
+    loops += 1
+    if not (loops % 10):
+        print(f'Completed {loops} loops')
     for i, process in enumerate(processes):
         if process.poll() is not None:  # the process has ended
             elapsed_time = datetime.now() - start_time
-            print(f"Job on GPU {gpu_names[i]} finished after {elapsed_time}")
+            print(f"Job on {gpu_names[i]} finished after {elapsed_time}")
                         
             file_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
                         + gpu_names[i] + '_samples.npz')
 
             # Try to load the data file for up to 5 seconds
-            delay_time = 5
+            delay_time = 3
             for t in range(delay_time):
                 try:
                     data = np.load(file_path)  # Try to load the data file
@@ -113,13 +128,14 @@ while processes:
             else:
                 print(f'{gpu_names[i]} has failed.')
             
-            print(f'[{gpu_names[i]}] The initial PID is {processes[i].pid}')
+            # print(f'[{gpu_names[i]}] The initial PID is {processes[i].pid}')
+            print(f'The length of processes if {len(processes)}')
             # Restart the process on the same GPU regardless of outcome
             processes[i] = start_process(i, gpu_names, conda_sh, 
                                          env_name, python_script, 
                                          processes, return_process=True, 
                                          batch_size=batch_size)
-            print(f'[{gpu_names[i]}] The next PID is {processes[i].pid}')
+            # print(f'[{gpu_names[i]}] The next PID is {processes[i].pid}')
             
             try:
                 # remove the file
