@@ -100,6 +100,6 @@ def kill_processes(gpu_name):
 def estimate_end(no_good_images, desired_samples, start_time):
     time_taken = (datetime.now() - start_time).total_seconds()  # in seconds
     secs_per_image = time_taken / no_good_images
-    projected_time = secs_per_image * desired_samples
+    projected_time = secs_per_image * (desired_samples-no_good_images)
     end_t = timedelta(seconds=projected_time) + datetime.now()
     print(f'The process should finish at: {end_t.time().strftime("%H:%M:%S")}')
