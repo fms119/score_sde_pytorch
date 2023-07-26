@@ -11,9 +11,9 @@ from generate_samples_functions import *
 
 print(datetime.now())
 
-desired_samples = 100
+desired_samples = 3000
 
-batch_size = 4
+batch_size = 128
 
 # list of GPU IDs and corresponding names
 GTX_TITAN_X = [f'0{i}' for i in range(1,10)] + ['10', '11', '12', '13']
@@ -27,7 +27,6 @@ ray_machines = ([f'ray0{i}' for i in range(1, 4)]
                 + [f'ray{i}' for i in range(10, 27)])
 
 gpu_names = ray_machines + ['gpu'+n for n in gpu_ids]
-gpu_names = ray_machines
 
 # Could potentially use the ssh_gpu_checker to select all machines with 1 job
 #   running, put these into a list and then run the jobs on this. Then batch
@@ -131,8 +130,6 @@ while processes:
             else:
                 print(f'{gpu_names[i]} has failed.')
             
-            # print(f'[{gpu_names[i]}] The initial PID is {processes[i].pid}')
-            print(f'The length of processes if {len(processes)}')
             # Restart the process on the same GPU regardless of outcome
             processes[i] = start_process(i, gpu_names, conda_sh, 
                                          env_name, python_script, 
@@ -157,8 +154,6 @@ print(f'The final number of good images is {all_images.shape[0]}')
 
 np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/'
         f'all_samples_{all_images.shape[0]}.npz', images=all_images)
-
-print(f'The length of processes if {len(processes)}')
 
 time.sleep(20)
 
