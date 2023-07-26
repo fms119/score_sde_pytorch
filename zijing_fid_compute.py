@@ -174,6 +174,12 @@ def calculate_activation_statistics(images, sess, batch_size=50, verbose=False):
         data = np.load(path)
         mu = data['mu']
         sigma = data['sigma']
+        
+        path = '/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/cifar10_stats.npz'
+        ys_data = np.load(path)
+        mu = ys_data['pool_3'].mean(axis=0)
+        sigma = np.cov(ys_data['pool_3'], rowvar=False)
+
     else:
         act = get_activations(images, sess, batch_size, verbose)
         mu = np.mean(act, axis=0)
