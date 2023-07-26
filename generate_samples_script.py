@@ -11,13 +11,13 @@ from generate_samples_functions import *
 
 print(datetime.now())
 
-desired_samples = 5000
+desired_samples = 100
 
-batch_size = 64
+batch_size = 4
 
 # list of GPU IDs and corresponding names
 GTX_TITAN_X = [f'0{i}' for i in range(1,10)] + ['10', '11', '12', '13']
-RTX_2080_ti = ['18', '19', '20', '21', '22', '28', '29', '30',]
+RTX_2080_ti = ['18', '19', '20', '21', '22', '29', '30',]
 GTX_1080 = ['15', '14', '16', '17', '23', '24']
 
 gpu_ids = GTX_TITAN_X + RTX_2080_ti + GTX_1080
@@ -27,6 +27,7 @@ ray_machines = ([f'ray0{i}' for i in range(1, 4)]
                 + [f'ray{i}' for i in range(10, 27)])
 
 gpu_names = ray_machines + ['gpu'+n for n in gpu_ids]
+gpu_names = ray_machines
 
 # Could potentially use the ssh_gpu_checker to select all machines with 1 job
 #   running, put these into a list and then run the jobs on this. Then batch
@@ -117,7 +118,9 @@ while processes:
                 images = data['x']
                 all_images = np.concatenate((all_images, images), 0)
                 print(f'{gpu_names[i]} has obtained good images.')
-                print(f'Collected {all_images.shape[0] - 1} of  {desired_samples} images.')
+                no_good_images = all_images.shape[0] - 1
+                print(f'Collected {no_good_images} of  {desired_samples} images.')
+                estimate_end(no_good_images, desired_samples, start_time)
                 print(f'Maximum: {all_images.max()}')
                 print(f'Minimum: {all_images.min()}')
                 
@@ -156,8 +159,6 @@ np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/'
         f'all_samples_{all_images.shape[0]}.npz', images=all_images)
 
 print(f'The length of processes if {len(processes)}')
-
-cleanup(processes)
 
 time.sleep(20)
 
