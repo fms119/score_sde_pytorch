@@ -3,6 +3,7 @@ import numpy as np
 from zijing_fid_compute import fid_score
 
 
+
 def compute_fid(x_data, x_samples, use_cpu=False):
 
     assert type(x_data) == np.ndarray
@@ -60,16 +61,14 @@ def compute_fid_nchw(x_data, x_samples):
 
     return fid
 
-def get_fid():
-
+def get_fid(file_path):
     data = np.load('/vol/bitbucket/fms119/score_sde_pytorch/'
                            'samples/cirfar10_true_10000.npz')
     data_samples = data['images'].transpose(0,3,1,2)
     data_samples = np.interp(data_samples, (data_samples.min(), data_samples.max()), (0, 1))
 
-    data = np.load('/vol/bitbucket/fms119/score_sde_pytorch/samples/'
-                                 'all_samples_300.npz')
-    gen_samples = data['x']
+    data = np.load(file_path)
+    gen_samples = data['images']
     gen_samples = np.interp(gen_samples, (gen_samples.min(), gen_samples.max()), (0, 1))
 
     fid = compute_fid_nchw(data_samples, gen_samples)

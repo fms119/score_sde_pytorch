@@ -174,7 +174,8 @@ def calculate_activation_statistics(images, sess, batch_size=50, verbose=False):
         data = np.load(path)
         mu = data['mu']
         sigma = data['sigma']
-        
+        # Clean this up because this gives mean and var when dataset is size 
+        # 10000 and then gives mu_var for 50k
         path = '/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/cifar10_stats.npz'
         ys_data = np.load(path)
         mu = ys_data['pool_3'].mean(axis=0)
