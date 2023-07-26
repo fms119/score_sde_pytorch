@@ -1,4 +1,5 @@
 import argparse
+import gc
 
 from generate_samples_functions import validate_images
 
@@ -99,6 +100,9 @@ corrector = LangevinCorrector #@param ["LangevinCorrector", "AnnealedLangevinDyn
 snr = 0.16 #@param {"type": "number"}
 n_steps =  1#@param {"type": "integer"}
 probability_flow = False #@param {"type": "boolean"}
+
+gc.collect()
+
 sampling_fn = sampling.get_pc_sampler(sde, shape, predictor, corrector,
                                       inverse_scaler, snr, n_steps=n_steps,
                                       probability_flow=probability_flow,
@@ -106,6 +110,7 @@ sampling_fn = sampling.get_pc_sampler(sde, shape, predictor, corrector,
                                       eps=sampling_eps, device=config.device)
 
 x, n = sampling_fn(score_model)
+
 numpy_x = x.cpu().numpy()
     
 while not validate_images({'x':numpy_x}):
