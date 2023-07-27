@@ -151,7 +151,7 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
 
 
 
-def calculate_activation_statistics(images, sess, batch_size=50, verbose=False):
+def calculate_activation_statistics(images, sess, batch_size=50, verbose=False, base_size=None):
     """Calculation of the statistics used by the FID.
     Params:
     -- images      : Numpy array of dimension (n_images, hi, wi, 3). The values
@@ -167,28 +167,21 @@ def calculate_activation_statistics(images, sess, batch_size=50, verbose=False):
     -- sigma : The covariance matrix of the activations of the pool_3 layer of
                the incption model.
     """
-    
-    if images.shape[0]==10000:
+    if base_size=='10k':
         print('TAKING SHORTCUT')
         path = '/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/CIFAR10_stats_10000.npz'
         data = np.load(path)
         mu = data['mu']
         sigma = data['sigma']
-        # Clean this up because this gives mean and var when dataset is size 
-        # 10000 and then gives mu_var for 50k
+    elif base_size=='50k':
         path = '/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/cifar10_stats.npz'
         ys_data = np.load(path)
         mu = ys_data['pool_3'].mean(axis=0)
         sigma = np.cov(ys_data['pool_3'], rowvar=False)
-
     else:
         act = get_activations(images, sess, batch_size, verbose)
         mu = np.mean(act, axis=0)
         sigma = np.cov(act, rowvar=False)
-
-    # if images.shape[0]==10000:
-    #     path = '/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/CIFAR10_stats_10000.npz'
-    #     np.savez(path, mu=mu, sigma=sigma)
 
     return mu, sigma
 
@@ -253,7 +246,7 @@ def check_or_download_inception(inception_path):
 #         fid_value = calculate_frechet_distance(m1, s1, m2, s2)
 #         return fid_value
 
-def fid_score(create_session, data, samples, path='/tmp', cpu_only=False):
+def fid_score(create_session, data, samples, path='/tmp', cpu_only=False, base_size=None):
 
     with create_session() as sess:
         if cpu_only:
@@ -262,8 +255,8 @@ def fid_score(create_session, data, samples, path='/tmp', cpu_only=False):
                 create_inception_graph(str(inception_path))
                 data = data
                 samples = samples
-                m1, s1 = calculate_activation_statistics(data, sess)
-                m2, s2 = calculate_activation_statistics(samples, sess)
+                m1, s1 = calculate_activation_statistics(data, sess, base_size=base_size)
+                m2, s2 = calculate_activation_statistics(samples, sess,)
                 fid_value = calculate_frechet_distance(m1, s1, m2, s2)
                 return fid_value
         else:
@@ -271,11 +264,10 @@ def fid_score(create_session, data, samples, path='/tmp', cpu_only=False):
             create_inception_graph(str(inception_path))
             data = data
             samples = samples
-            m1, s1 = calculate_activation_statistics(data, sess)
-            m2, s2 = calculate_activation_statistics(samples, sess)
+            m1, s1 = calculate_activation_statistics(data, sess, base_size=base_size)
+            m2, s2 = calculate_activation_statistics(samples, sess,)
             fid_value = calculate_frechet_distance(m1, s1, m2, s2)
             return fid_value
-
 
 
 #def get_fid_score(data_path, inception_path=None, gpu='0'):

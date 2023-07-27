@@ -3,8 +3,7 @@ import numpy as np
 from zijing_fid_compute import fid_score
 
 
-
-def compute_fid(x_data, x_samples, use_cpu=False):
+def compute_fid(x_data, x_samples, use_cpu=False, base_size=None):
 
     assert type(x_data) == np.ndarray
     assert type(x_samples) == np.ndarray
@@ -46,22 +45,22 @@ def compute_fid(x_data, x_samples, use_cpu=False):
             return tf.Session(config=config)
 
     path = '/tmp'
-    fid = fid_score(create_session, x_data, x_samples, path, cpu_only=use_cpu)
+    fid = fid_score(create_session, x_data, x_samples, path, cpu_only=use_cpu, base_size=base_size)
 
     return fid
 
-def compute_fid_nchw(x_data, x_samples):
+def compute_fid_nchw(x_data, x_samples, base_size=None):
 
     to_nhwc = lambda x: np.transpose(x, (0, 2, 3, 1))
 
     x_data_nhwc = to_nhwc(255 * x_data)
     x_samples_nhwc = to_nhwc(255 * x_samples)
 
-    fid = compute_fid(x_data_nhwc, x_samples_nhwc)
+    fid = compute_fid(x_data_nhwc, x_samples_nhwc, base_size=base_size)
 
     return fid
 
-def get_fid(file_path):
+def get_fid(file_path, base_size=None):
     data = np.load('/vol/bitbucket/fms119/score_sde_pytorch/'
                            'samples/cirfar10_true_10000.npz')
     data_samples = data['images'].transpose(0,3,1,2)
@@ -71,7 +70,7 @@ def get_fid(file_path):
     gen_samples = data['images']
     gen_samples = np.interp(gen_samples, (gen_samples.min(), gen_samples.max()), (0, 1))
 
-    fid = compute_fid_nchw(data_samples, gen_samples)
+    fid = compute_fid_nchw(data_samples, gen_samples, base_size=base_size)
     return fid
 
 if __name__ == '__main__':
