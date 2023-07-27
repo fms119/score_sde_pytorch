@@ -11,7 +11,7 @@ from generate_samples_functions import *
 
 print(datetime.now())
 
-desired_samples = 3000
+desired_samples = 50000
 
 batch_size = 128
 
@@ -27,6 +27,14 @@ ray_machines = ([f'ray0{i}' for i in range(1, 4)]
                 + [f'ray{i}' for i in range(10, 27)])
 
 gpu_names = ray_machines + ['gpu'+n for n in gpu_ids]
+
+gpu_names.remove('ray09')
+gpu_names.remove('ray23')
+gpu_names.remove('gpu01')
+gpu_names.remove('gpu04')
+gpu_names.remove('gpu05')
+gpu_names.remove('gpu10')
+gpu_names.remove('gpu14')
 
 # Could potentially use the ssh_gpu_checker to select all machines with 1 job
 #   running, put these into a list and then run the jobs on this. Then batch
@@ -116,6 +124,10 @@ while processes:
             if validate_images(data):
                 images = data['x']
                 all_images = np.concatenate((all_images, images), 0)
+                # Save progress
+                np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/'
+                         f'all_samples_{desired_samples}.npz', images=all_images)
+                
                 print(f'{gpu_names[i]} has obtained good images.')
                 no_good_images = all_images.shape[0] - 1
                 print(f'Collected {no_good_images} of  {desired_samples} images.')
