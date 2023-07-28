@@ -169,15 +169,23 @@ def calculate_activation_statistics(images, sess, batch_size=50, verbose=False, 
     """
     if base_size=='10k':
         print('TAKING SHORTCUT')
-        path = '/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/CIFAR10_stats_10000.npz'
+        path = ('/vol/bitbucket/fms119/score_sde_pytorch/'
+                'assets/stats/CIFAR10_stats_10000.npz')
         data = np.load(path)
         mu = data['mu']
         sigma = data['sigma']
     elif base_size=='50k':
-        path = '/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/cifar10_stats.npz'
+        path = ('/vol/bitbucket/fms119/score_sde_pytorch/'
+                'assets/stats/cifar10_stats.npz')
         ys_data = np.load(path)
         mu = ys_data['pool_3'].mean(axis=0)
         sigma = np.cov(ys_data['pool_3'], rowvar=False)
+    elif base_size=='2k':
+        path = ('/vol/bitbucket/fms119/score_sde_pytorch/'
+                'assets/stats/CIFAR10_stats_2000.npz')
+        data = np.load(path)
+        mu = data['mu']
+        sigma = data['sigma']
     else:
         act = get_activations(images, sess, batch_size, verbose)
         mu = np.mean(act, axis=0)
@@ -216,35 +224,6 @@ def check_or_download_inception(inception_path):
         # TODO (en): cleanup
         return '/cns/iz-d/home/nijkamp/models/inception/classify_image_graph_def.pb'
 
-
-# def _handle_path(path, sess):
-#     if path.endswith('.npz'):
-#         f = np.load(path)
-#         m, s = f['mu'][:], f['sigma'][:]
-#         f.close()
-#     else:
-#         path = pathlib.Path(path)
-#         files = list(path.glob('*.jpg')) + list(path.glob('*.png'))
-#         x = np.array([imread(str(fn)).astype(np.float32) for fn in files])
-#         m, s = calculate_activation_statistics(x, sess)
-#     return m, s
-
-
-# def calculate_fid_given_paths(paths, inception_path):
-#     ''' Calculates the FID of two paths. '''
-#     inception_path = check_or_download_inception(inception_path)
-#
-#     for p in paths:
-#         if not os.path.exists(p):
-#             raise RuntimeError("Invalid path: %s" % p)
-#
-#     create_inception_graph(str(inception_path))
-#     with tf.Session() as sess:
-#         sess.run(tf.global_variables_initializer())
-#         m1, s1 = _handle_path(paths[0], sess)
-#         m2, s2 = _handle_path(paths[1], sess)
-#         fid_value = calculate_frechet_distance(m1, s1, m2, s2)
-#         return fid_value
 
 def fid_score(create_session, data, samples, path='/tmp', cpu_only=False, base_size=None):
 
