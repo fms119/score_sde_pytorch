@@ -122,7 +122,7 @@ while processes:
                 images = data['x']
                 all_images = np.concatenate((all_images, images), 0)
                 # Save progress
-                np.savez(save_samples_path, images=all_images)
+                np.savez(save_samples_path, images=all_images[1:])
                 
                 print(f'{gpu_names[i]} has obtained good images.')
                 no_good_images = all_images.shape[0] - 1
@@ -156,7 +156,7 @@ while processes:
         break
     time.sleep(10)  # wait a 10 seconds before checking the processes again
 
-all_images = all_images[1:desired_samples+1, :, :, :]
+all_images = all_images[1:desired_samples+1]
 
 print(f'The final number of good images is {all_images.shape[0]}')
 

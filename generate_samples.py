@@ -4,15 +4,8 @@ import gc
 from generate_samples_functions import validate_images
 
 import matplotlib.pyplot as plt
-# import io
-# import csv
 import numpy as np
 import pandas as pd
-# import matplotlib
-# import importlib
-# import os
-# import functools
-# import itertools
 from losses import get_optimizer
 from models.ema import ExponentialMovingAverage
 
@@ -34,36 +27,42 @@ import sampling
 from likelihood import get_likelihood_fn
 from sde_lib import VESDE, VPSDE, subVPSDE
 from sampling import (ReverseDiffusionPredictor, 
-                      LangevinCorrector, 
-                      EulerMaruyamaPredictor, 
-                      AncestralSamplingPredictor, 
-                      NoneCorrector, 
-                      NonePredictor,
-                      AnnealedLangevinDynamics)
+											LangevinCorrector, 
+											EulerMaruyamaPredictor, 
+											AncestralSamplingPredictor, 
+											NoneCorrector, 
+											NonePredictor,
+											AnnealedLangevinDynamics)
 import datasets
 import argparse
 
 parser = argparse.ArgumentParser(
-  description='Configure batch sizes and gpu name.'
-  )
+	description='Configure batch sizes and gpu name.'
+	)
 parser.add_argument('-b', '--batch_size', type=int, default=128, 
-                    help='Number of images to be generated per machine')
+										help='Number of images to be generated per machine')
 parser.add_argument('-g', '--gpu', type=str, default='texel05', 
-                    help='which GPU in list has this come from')
+										help='which GPU in list has this come from')
 args = parser.parse_args()
 
 
 # @title Load the score-based model
 sde = 'VESDE' #@param ['VESDE', 'VPSDE', 'subVPSDE'] {"type": "string"}
 if sde.lower() == 'vesde':
-  from configs.ve import cifar10_ncsnpp_continuous as configs
-  ckpt_filename = "/vol/bitbucket/fms119/score_sde_pytorch/exp/ve/cifar10_ncsnpp_continuous/checkpoint_24.pth"
-  # THE BELOW CHECKPOINTS DO NOT WORK
-  # ckpt_filename = "/vol/bitbucket/fms119/score_sde_pytorch/exp/ve/cifar10_ncsnpp/checkpoint_16.pth"
-  # ckpt_filename = "/vol/bitbucket/fms119/score_sde_pytorch/exp/ve/cifar10_ncsnpp_deep_continuous/checkpoint_12.pth"
-  config = configs.get_config()  
-  sde = VESDE(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max, N=config.model.num_scales)
-  sampling_eps = 1e-5
+	from configs.ve import cifar10_ncsnpp_continuous as configs
+	ckpt_filename = "/vol/bitbucket/fms119/score_sde_pytorch/exp/ve/cifar10_ncsnpp_continuous/checkpoint_24.pth"
+	# THE BELOW CHECKPOINTS DO NOT WORK
+	# ckpt_filename = "/vol/bitbucket/fms119/score_sde_pytorch/exp/ve/cifar10_ncsnpp/checkpoint_16.pth"
+	# ckpt_filename = "/vol/bitbucket/fms119/score_sde_pytorch/exp/ve/cifar10_ncsnpp_deep_continuous/checkpoint_12.pth"
+	# 
+	# I think these do not work because you need to change
+	# from configs.ve import cifar10_ncsnpp_continuous as configs      to
+	# from configs.ve import cifar10_ncsnpp as configs         or
+	# from configs.ve import cifar10_ncsnpp_deep_continuous as configs         
+	# 
+	config = configs.get_config()  
+	sde = VESDE(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max, N=config.model.num_scales)
+	sampling_eps = 1e-5
 
 
 batch_size =   args.batch_size # 128#@param {"type":"integer"}
@@ -82,9 +81,9 @@ score_model = mutils.create_model(config)
 
 optimizer = get_optimizer(config, score_model.parameters())
 ema = ExponentialMovingAverage(score_model.parameters(),
-                               decay=config.model.ema_rate)
+															 decay=config.model.ema_rate)
 state = dict(step=0, optimizer=optimizer,
-             model=score_model, ema=ema)
+						 model=score_model, ema=ema)
 
 state = restore_checkpoint(ckpt_filename, state, config.device)
 ema.copy_to(score_model.parameters())
@@ -104,22 +103,22 @@ probability_flow = False #@param {"type": "boolean"}
 gc.collect()
 
 sampling_fn = sampling.get_pc_sampler(sde, shape, predictor, corrector,
-                                      inverse_scaler, snr, n_steps=n_steps,
-                                      probability_flow=probability_flow,
-                                      continuous=config.training.continuous,
-                                      eps=sampling_eps, device=config.device)
+																			inverse_scaler, snr, n_steps=n_steps,
+																			probability_flow=probability_flow,
+																			continuous=config.training.continuous,
+																			eps=sampling_eps, device=config.device)
 
 x, n = sampling_fn(score_model)
 
 numpy_x = x.cpu().numpy()
-    
+		
 while not validate_images({'x':numpy_x}):
-  
-  print('caught failed before saving files')
-  print(f'std: {numpy_x.reshape(-1).std()}')
+	
+	print('caught failed before saving files')
+	print(f'std: {numpy_x.reshape(-1).std()}')
 
-  x, n = sampling_fn(score_model)
-  numpy_x = x.cpu().numpy()
+	x, n = sampling_fn(score_model)
+	numpy_x = x.cpu().numpy()
 
 np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/'
-         f'{args.gpu}_samples.npz', x=numpy_x)
+				 f'{args.gpu}_samples.npz', x=numpy_x)
