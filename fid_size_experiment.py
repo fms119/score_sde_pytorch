@@ -4,13 +4,11 @@ import numpy as np
 import gc
 from zijing_main import compute_fid_nchw
 
-n_trials = 10
-n=4000
-fid_trails = np.zeros(n_trials)
 base_size = '50k'
-source = 'generated'
+source = 'test'
+image_path = '/vol/bitbucket/fms119/score_sde_pytorch/samples/all_samples_4000_b.npz'
 
-def get_fid(i, n, base_size=None, source='choose'):
+def get_fid(i=0, n=0, base_size='50k', source='choose', file_path=''):
     '''
     base_size: str: '2k', '10k' or '50k' or None
     '''
@@ -27,6 +25,9 @@ def get_fid(i, n, base_size=None, source='choose'):
                      'cifar10_true_trials/cirfar10_true_50000.npz')
         data = np.load(file_path)
         gen_samples = data['images'][:n].transpose(0,3,1,2)
+    elif source=='test':
+        data = np.load(file_path)
+        gen_samples = data['images']
 
     gc.collect()
     gen_samples = np.interp(gen_samples, (gen_samples.min(), gen_samples.max()),
@@ -34,13 +35,11 @@ def get_fid(i, n, base_size=None, source='choose'):
     fid = compute_fid_nchw(data_samples, gen_samples, base_size=base_size)
     return fid
 
-
-for i in range(n_trials):
-    fid = get_fid(i, n, base_size=base_size, source=source)    
-    fid_trails[i] = fid
+if __name__=='__main__':
+    fid = get_fid(source=source, file_path=image_path)    
     print(fid)
     # You should always be saving progess during experiments like this.
     save_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/'
-                 'cifar10_true_trials/fid_size_experiment_4000_var.npz')
+                'cifar10_true_trials/fid_results/snr_0.3.npz')
     np.savez(save_path, 
-                fid_trails=fid_trails)
+             fid=fid)
