@@ -6,7 +6,8 @@ from zijing_main import compute_fid_nchw
 
 base_size = '50k'
 source = 'test'
-image_path = '/vol/bitbucket/fms119/score_sde_pytorch/samples/all_samples_4000_b.npz'
+image_path = '/vol/bitbucket/fms119/score_sde_pytorch/samples/all_samples_4000.npz'
+snr = '0.2'
 
 def get_fid(i=0, n=0, base_size='50k', source='choose', file_path=''):
     '''
@@ -40,6 +41,5 @@ if __name__=='__main__':
     print(fid)
     # You should always be saving progess during experiments like this.
     save_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/'
-                'cifar10_true_trials/fid_results/snr_0.3.npz')
-    np.savez(save_path, 
-             fid=fid)
+                 f'fid_results/snr_{snr}.npz')
+    np.savez(save_path, fid=fid)
