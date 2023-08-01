@@ -272,6 +272,14 @@ class LangevinCorrector(Corrector):
         score_fn = self.score_fn
         n_steps = self.n_steps
         target_snr = self.snr
+        channel_covariance = torch.tensor([[1.0000, 0.9100, 0.7831],
+                                           [0.9100, 1.0000, 0.9056],
+                                           [0.7831, 0.9056, 1.0000]])
+        L = torch.cholesky(channel_covariance).to('cuda')
+
+        L = torch.eye(3).to('cuda')
+
+        N = x.shape[0]
         if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
             timestep = (t * (sde.N - 1) / sde.T).long()
             alpha = sde.alphas.to(t.device)[timestep]
@@ -279,17 +287,37 @@ class LangevinCorrector(Corrector):
             alpha = torch.ones_like(t)
 
         for i in range(n_steps):
+            L = torch.max(
+                (torch.eye(3) + 0.5*torch.diag(torch.randn(3))), 
+                torch.zeros((3,3))
+                ).to('cuda')
+            
+            # x.shape = (N, 3, 32, 32)
             grad = score_fn(x, t)
-            noise = torch.randn_like(x)
-            # grad_norm: float64
-            grad_norm = torch.norm(grad.reshape(
-                grad.shape[0], -1), dim=-1).mean()
-            noise_norm = torch.norm(noise.reshape(
-                noise.shape[0], -1), dim=-1).mean()
+            # noise.shape = (N, 3, 32, 32)
+            # noise = torch.randn_like(x).unsqueeze(-1)
+            reshaped_rvs = torch.randn((N, 32, 32, 3, 1)).to('cuda')
+            correlated_noise = torch.matmul(
+                L, reshaped_rvs
+            ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
+            grad = torch.matmul(
+                (L@L), grad.permute(0, 2, 3, 1).unsqueeze(-1)
+            ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
+
+        # Should I scale the noises after stretching?
+            # grad_norm: tensor.float64
+            grad_norm = torch.norm(
+                grad.reshape(grad.shape[0], -1), dim=-1
+            ).mean()
+            # noise_norm: tensor.float64
+            noise_norm = torch.norm(
+                correlated_noise.reshape(correlated_noise.shape[0], -1), dim=-1
+            ).mean()
             step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
             x_mean = x + step_size[:, None, None, None] * grad
             # noise added
-            x = x_mean + torch.sqrt(step_size * 2)[:, None, None, None] * noise
+            x = x_mean + torch.sqrt(step_size *
+                                    2)[:, None, None, None] * correlated_noise
 
         return x, x_mean
 
