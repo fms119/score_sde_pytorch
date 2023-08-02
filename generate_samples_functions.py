@@ -26,15 +26,15 @@ def cleanup(processes):
             process.terminate()     # Try to terminate the process
             time.sleep(1)           # Wait for a moment to let the process terminate
             if process.poll() is None:
-                print('Used kill')
+                # print('Used kill')
                 process.kill()      # If it's still running, kill it
                 time.sleep(1)       # Wait for a moment to let the process be killed
-            if process.poll() is None:
-                print(f'Failed to kill process {i} of {n}')
-            else:
-                print(f'Successfully killed process {i} of {n}')
-        else:
-            print(f'Process {i} of {n} had already finished')
+            # if process.poll() is None:
+                # print(f'Failed to kill process {i} of {n}')
+        #     else:
+        #         print(f'Successfully killed process {i} of {n}')
+        # else:
+        #     print(f'Process {i} of {n} had already finished')
 
         
 def validate_images(loaded_data, key='x'):
@@ -58,7 +58,7 @@ def scale_batch_size(gpu_name):
         return 1
 
 def start_process(i, gpu_names, conda_sh, env_name, python_script, processes,
-                   return_process=False, batch_size=64):
+                   return_process=False, batch_size=64, cov=0):
     '''Starts a process on a specific GPU. Initially it creates a list of 
     processes but once a process has been run it starts another one and returns
     it'''
@@ -76,7 +76,7 @@ def start_process(i, gpu_names, conda_sh, env_name, python_script, processes,
         # Append the GPU name to the output
         # 'nice -n 1' 
         f'nice -n 1 python {python_script} '
-        f'--batch_size {scale_batch_size(gpu_name) * batch_size} --gpu {gpu_name}'
+        f'--batch_size {scale_batch_size(gpu_name) * batch_size} --gpu {gpu_name} --cov {cov}'
         f' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
     )
     process = subprocess.Popen(command, shell=True)
@@ -90,12 +90,12 @@ def start_process(i, gpu_names, conda_sh, env_name, python_script, processes,
 def kill_processes(gpu_name):
     command = [
         'ssh', gpu_name,
+        'find ~/.cache/torch_extensions -type f -name "*lock*" -delete;'
         'ps -eo pid,user,etimes | awk \'$2 == "fms119" && $3 > 6 {print $1}\' | xargs -r kill -15'
     ]
+    subprocess.Popen(command, shell=False)
     # Clever way to search through processes with similar names to the typed string
     # ps aux | grep -i fms119/Projects | awk '{print $2}' | xargs kill -15
-
-    subprocess.Popen(command, shell=False)
 
 def estimate_end(no_good_images, desired_samples, start_time):
     time_taken = (datetime.now() - start_time).total_seconds()  # in seconds
@@ -103,3 +103,20 @@ def estimate_end(no_good_images, desired_samples, start_time):
     projected_time = secs_per_image * (desired_samples-no_good_images)
     end_t = timedelta(seconds=projected_time) + datetime.now()
     print(f'The process should finish at: {end_t.time().strftime("%H:%M:%S")}')
+
+def merge_intermediate_samples(gpu_names, desired_samples):
+    '''Join all the individually created samples so FID can be evaluated at 
+    times during generation.'''
+    for i in range(1,11):
+        dir_path = f'/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/{i}'
+        files = [name+'.npz' for name in gpu_names]
+        all_images = np.ones((1,3,32,32))
+        for file in files:
+            full_path = os.path.join(dir_path,file)
+            data = np.load(full_path)
+            images = data['images']
+            all_images = np.concatenate((all_images, images))
+        if all_images.shape[0]>=1000:
+            np.savez(os.path.join(dir_path, f'all_samples_{desired_samples}.npz'), images=all_images[-desired_samples:])
+        else:
+            print(f'Incorrect size for {i}')
