@@ -22,3 +22,6 @@ dist/
 
 #logs
 logs/
+__pycache__/.nfs00000001486eec4500000001
+__pycache__/.nfs00000001486eec4400000001
+.vscode/settings.json
