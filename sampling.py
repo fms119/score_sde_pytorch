@@ -257,6 +257,13 @@ class NonePredictor(Predictor):
         return x, x
 
 
+
+
+
+
+
+
+
 @register_corrector(name='langevin')
 class LangevinCorrector(Corrector):
     def __init__(self, sde, score_fn, snr, n_steps):
@@ -277,7 +284,9 @@ class LangevinCorrector(Corrector):
                                            [0.7831, 0.9056, 1.0000]])
         L = torch.cholesky(channel_covariance).to('cuda')
 
-        L = torch.eye(3).to('cuda')
+        I = torch.eye(3)
+        I[1,0] = I[0,1] = I[1,2] = I[2,1] = self.cov
+        L = torch.cholesky(I).to('cuda')
 
         N = x.shape[0]
         if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
@@ -286,12 +295,7 @@ class LangevinCorrector(Corrector):
         else:
             alpha = torch.ones_like(t)
 
-        for i in range(n_steps):
-            L = torch.max(
-                (torch.eye(3) + 0.5*torch.diag(torch.randn(3))), 
-                torch.zeros((3,3))
-                ).to('cuda')
-            
+        for i in range(n_steps):                 
             # x.shape = (N, 3, 32, 32)
             grad = score_fn(x, t)
             # noise.shape = (N, 3, 32, 32)
@@ -320,6 +324,18 @@ class LangevinCorrector(Corrector):
                                     2)[:, None, None, None] * correlated_noise
 
         return x, x_mean
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 @register_corrector(name='ald')
@@ -431,7 +447,7 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
                                             snr=snr,
                                             n_steps=n_steps)
 
-    def pc_sampler(model):
+    def pc_sampler(model, gpu_name):
         """ The PC sampler funciton.
 
         Args:
@@ -446,11 +462,15 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
 
             # This is where I can save intermediate generations
             for i in range(sde.N):
+                corrector.cov = 0.7 * ((1000-i) / 1000)
                 t = timesteps[i]
                 vec_t = torch.ones(shape[0], device=t.device) * t
                 x, x_mean = corrector_update_fn(x, vec_t, model=model)
                 x, x_mean = predictor_update_fn(x, vec_t, model=model)
-
+                if not (i+1)%100:
+                    dir = (i+1)//100
+                    np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/{dir}/{gpu_name}',
+                             images=x_mean.cpu().numpy())
             return inverse_scaler(x_mean if denoise else x), sde.N * (n_steps + 1)
 
     return pc_sampler
