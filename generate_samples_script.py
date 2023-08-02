@@ -11,23 +11,30 @@ from generate_samples_functions import *
 
 print(datetime.now())
 
-desired_samples = 500
-
-batch_size = 64
+desired_samples = 1000
+batch_size = 128
+cov = 0
 
 # list of GPU IDs and corresponding names
-GTX_TITAN_X = [f'0{i}' for i in range(1,10)] + ['10', '11', '12', '13']
-RTX_2080_ti = ['18', '19', '20', '21', '22', '28', '29', '30',]
-GTX_1080 = ['15', '14', '16', '17', '23', '24']
+# GTX_TITAN_X = [f'0{i}' for i in range(1,10)] + ['10', '11', '12', '13']
+# RTX_2080_ti = ['18', '19', '20', '21', '22', '29', '30',]
+# GTX_1080 = ['15', '14', '16', '17', '23', '24']
+# gpu_ids = GTX_TITAN_X + RTX_2080_ti + GTX_1080
 
-gpu_ids = GTX_TITAN_X + RTX_2080_ti + GTX_1080
-
-ray_machines = ([f'ray0{i}' for i in range(1, 4)]
-                + [f'ray0{i}' for i in range(6, 10)]
+ray_machines = ([f'ray0{i}' for i in range(1, 7)]
+                + [f'ray0{i}' for i in range(7, 10)]
                 + [f'ray{i}' for i in range(10, 27)])
 
-gpu_names = ray_machines + ['gpu'+n for n in gpu_ids]
-# gpu_names.remove('ray01')
+# gpu_ids = ['30', '18', '22', '14', '15','16','17']
+
+gpu_names = ray_machines #+ ['gpu'+n for n in gpu_ids]
+gpu_names.remove('ray23')
+# gpu_names.remove('ray23')
+
+if len(gpu_names)>5:
+    batch_size = min(batch_size, 
+    max(desired_samples//(len(gpu_names)-3), 16)
+    )
 
 # Could potentially use the ssh_gpu_checker to select all machines with 1 job
 #   running, put these into a list and then run the jobs on this. Then batch
@@ -48,7 +55,7 @@ conda_sh = "/vol/bitbucket/fms119/miniconda3/etc/profile.d/conda.sh"
 env_name = "score_sde_env"
 
 save_samples_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/'
-                     f'all_samples_{desired_samples}_b.npz')
+                     f'all_samples_{desired_samples}.npz')
 
 remove_old_files(previously_saved_files)
 
@@ -61,7 +68,11 @@ processes = []
 # define a wrapper function that takes no arguments
 def cleanup_wrapper():
     global processes
+    global gpu_names
+    for gpu_name in gpu_names:
+        kill_processes(gpu_name)
     cleanup(processes)
+
 
 # register the wrapper function to be run at exit
 atexit.register(cleanup_wrapper)
@@ -76,7 +87,7 @@ print(gpu_names)
 # start processes on all machines
 for i in range(len(gpu_names)):
     start_process(i, gpu_names, conda_sh, env_name, python_script,
-                  processes, batch_size=batch_size)
+                  processes, batch_size=batch_size, cov=cov)
 
 all_images = np.zeros((1,3,32,32))
 
@@ -98,7 +109,7 @@ while processes:
                         + gpu_names[i] + '_samples.npz')
 
             # Try to load the data file for up to 5 seconds
-            delay_time = 3
+            delay_time = 15
             for t in range(delay_time):
                 try:
                     data = np.load(file_path)  # Try to load the data file
@@ -111,10 +122,9 @@ while processes:
             try:
                 data = np.load(file_path)
             except FileNotFoundError:
-                print(f"File not found for {gpu_names[i]}. DROPPING GPU FROM LIST.")
+                print(f"File not found after {t}s for {gpu_names[i]}. DROPPING GPU FROM LIST.")
                 del processes[i]
                 del gpu_names[i] 
-                # MAYBE I SOULD CHANGE THIS TO CONTINUE
                 continue
 
             # If the images are good, save them
@@ -142,7 +152,7 @@ while processes:
             processes[i] = start_process(i, gpu_names, conda_sh, 
                                          env_name, python_script, 
                                          processes, return_process=True, 
-                                         batch_size=batch_size)
+                                         batch_size=batch_size, cov=cov)
             # print(f'[{gpu_names[i]}] The next PID is {processes[i].pid}')
             
             try:
@@ -164,5 +174,8 @@ np.savez(save_samples_path, images=all_images)
 
 time.sleep(20)
 
-for gpu_name in gpu_names:
-    kill_processes(gpu_name)
+merge_intermediate_samples(gpu_names, desired_samples)
+
+cleanup_wrapper()
+
+# Maybe I should add a compute FID step here??
