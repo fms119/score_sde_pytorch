@@ -3,29 +3,19 @@ import gc
 
 from generate_samples_functions import validate_images
 
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 from losses import get_optimizer
 from models.ema import ExponentialMovingAverage
 
-import numpy as np
 from utils import restore_checkpoint
 
 print('Importing')
 
-import models
 from models import utils as mutils
 from models import ncsnpp
-from models import layerspp
-from models import layers
-from models import normalization
-
-print('Unlocked')
 
 import sampling
-from likelihood import get_likelihood_fn
-from sde_lib import VESDE, VPSDE, subVPSDE
+from sde_lib import VESDE
 from sampling import (ReverseDiffusionPredictor, 
       				  LangevinCorrector, 
 					  EulerMaruyamaPredictor, 
@@ -34,15 +24,16 @@ from sampling import (ReverseDiffusionPredictor,
 					  NonePredictor,
 					  AnnealedLangevinDynamics)
 import datasets
-import argparse
 
 parser = argparse.ArgumentParser(
 	description='Configure batch sizes and gpu name.'
 	)
-parser.add_argument('-b', '--batch_size', type=int, default=128, 
+parser.add_argument('-b', '--batch_size', type=int, default=2, 
 					help='Number of images to be generated per machine')
 parser.add_argument('-g', '--gpu', type=str, default='texel05', 
 					help='which GPU in list has this come from')
+parser.add_argument('-c', '--cov', type=str, default=0.7, 
+					help='channel covariance')
 args = parser.parse_args()
 
 
@@ -91,10 +82,14 @@ ema.copy_to(score_model.parameters())
 img_size = config.data.image_size
 channels = config.data.num_channels
 shape = (batch_size, channels, img_size, img_size)
+# Explain reverse diffusion predictor in report.
 predictor = ReverseDiffusionPredictor #@param ["EulerMaruyamaPredictor", "AncestralSamplingPredictor", "ReverseDiffusionPredictor", "None"] {"type": "raw"}
 corrector = LangevinCorrector #@param ["LangevinCorrector", "AnnealedLangevinDynamics", "None"] {"type": "raw"}
+
+corrector.cov = args.cov
+
 # snr = 0.16 #@param {"type": "number"}
-snr = 0.2 #@param {"type": "number"}
+snr = 0.16 #@param {"type": "number"}
 n_steps =  1#@param {"type": "integer"}
 probability_flow = False #@param {"type": "boolean"}
 
@@ -104,19 +99,20 @@ sampling_fn = sampling.get_pc_sampler(sde, shape, predictor, corrector,
   									  inverse_scaler, snr, n_steps=n_steps,
   									  probability_flow=probability_flow,
   									  continuous=config.training.continuous,
-  									  eps=sampling_eps, device=config.device)
+  									  eps=sampling_eps, device=config.device,
+)
 
-x, n = sampling_fn(score_model)
+x, n = sampling_fn(score_model, args.gpu)
 
 numpy_x = x.cpu().numpy()
 		
-while not validate_images({'x':numpy_x}):
+# while not validate_images({'x':numpy_x}):
 	
-	print('caught failed before saving files')
-	print(f'std: {numpy_x.reshape(-1).std()}')
+# 	print('caught failed before saving files')
+# 	print(f'std: {numpy_x.reshape(-1).std()}')
 
-	x, n = sampling_fn(score_model)
-	numpy_x = x.cpu().numpy()
+# 	x, n = sampling_fn(score_model)
+# 	numpy_x = x.cpu().numpy()
 
 np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/'
 		 f'{args.gpu}_samples.npz', x=numpy_x)
