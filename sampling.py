@@ -286,7 +286,7 @@ class LangevinCorrector(Corrector):
 
         I = torch.eye(3)
         I[1,0] = I[0,1] = I[1,2] = I[2,1] = self.cov
-        I[0,2] = I[2,0] = I[1,0] / 2
+        I[0,2] = I[2,0] = I[1,0] / 1.15
         L = torch.cholesky(I).to('cuda')
 
         N = x.shape[0]
@@ -463,7 +463,7 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
 
             # This is where I can save intermediate generations
             for i in range(sde.N):
-                corrector.cov = 0.84 * np.exp(-i / 350)
+                corrector.cov = 0.95 * np.exp(-i / 350)
                 t = timesteps[i]
                 vec_t = torch.ones(shape[0], device=t.device) * t
                 x, x_mean = corrector_update_fn(x, vec_t, model=model)
