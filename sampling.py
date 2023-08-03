@@ -273,13 +273,17 @@ class LangevinCorrector(Corrector):
             raise NotImplementedError(
                 f"SDE class {sde.__class__.__name__} not yet supported.")
 
-    def correlate_pixels(self, noise):
+    def correlate_pixels(self, noise, grad=False):
+        '''This is really slow, clean up later, L can be defined just once
+        and saved as an attribute not twice for noise and gradient. '''
         off_diag_cov = self.cov
         pixel_cov = (torch.eye(32) 
                 + torch.diag(off_diag_cov*torch.ones(31), -1) + torch.diag(off_diag_cov*torch.ones(31), 1)
                 + torch.diag(0.5*off_diag_cov*torch.ones(30), -2) + torch.diag(0.5*off_diag_cov*torch.ones(30), 2)
         ).to('cuda')
         L = torch.cholesky(pixel_cov)
+        if grad:
+            L = L@L
         correlated_images = L @ noise
         return (L @ correlated_images.permute(0,1,3,2)).permute(0,1,3,2)
 
@@ -316,9 +320,10 @@ class LangevinCorrector(Corrector):
             ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
             grad = torch.matmul(
                 (L@L), grad.permute(0, 2, 3, 1).unsqueeze(-1)
-            ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
-            
+            ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)            
+
             correlated_noise = self.correlate_pixels(correlated_noise)
+            grad = self.correlate_pixels(grad, grad=True)
             
             # Should I scale the noises after stretching?
             # grad_norm: tensor.float64
@@ -474,7 +479,7 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
 
             # This is where I can save intermediate generations
             for i in range(sde.N):
-                corrector.cov = 0.6 * np.exp(-i / 250)
+                corrector.cov = 0.67 * np.exp(-(i**2) / 9000)
                 t = timesteps[i]
                 vec_t = torch.ones(shape[0], device=t.device) * t
                 x, x_mean = corrector_update_fn(x, vec_t, model=model)
