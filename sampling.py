@@ -479,7 +479,7 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
 
             # This is where I can save intermediate generations
             for i in range(sde.N):
-                corrector.cov = 0.67 * np.exp(-(i**2) / 20000)
+                corrector.cov = 0.67 * np.exp(-(i**2) / 40000)
                 t = timesteps[i]
                 vec_t = torch.ones(shape[0], device=t.device) * t
                 x, x_mean = corrector_update_fn(x, vec_t, model=model)
