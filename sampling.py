@@ -263,7 +263,6 @@ class NonePredictor(Predictor):
 
 
 
-
 @register_corrector(name='langevin')
 class LangevinCorrector(Corrector):
     def __init__(self, sde, score_fn, snr, n_steps):
@@ -273,6 +272,16 @@ class LangevinCorrector(Corrector):
                 and not isinstance(sde, sde_lib.subVPSDE):
             raise NotImplementedError(
                 f"SDE class {sde.__class__.__name__} not yet supported.")
+
+    def correlate_pixels(self, noise):
+        off_diag_cov = self.cov
+        pixel_cov = (torch.eye(32) 
+                + torch.diag(off_diag_cov*torch.ones(31), -1) + torch.diag(off_diag_cov*torch.ones(31), 1)
+                + torch.diag(0.5*off_diag_cov*torch.ones(30), -2) + torch.diag(0.5*off_diag_cov*torch.ones(30), 2)
+        ).to('cuda')
+        L = torch.cholesky(pixel_cov)
+        correlated_images = L @ noise
+        return (L @ correlated_images.permute(0,1,3,2)).permute(0,1,3,2)
 
     def update_fn(self, x, t):
         sde = self.sde
@@ -285,8 +294,8 @@ class LangevinCorrector(Corrector):
         L = torch.cholesky(channel_covariance).to('cuda')
 
         I = torch.eye(3)
-        I[1,0] = I[0,1] = I[1,2] = I[2,1] = self.cov
-        I[0,2] = I[2,0] = I[1,0] / 1.15
+        # I[1,0] = I[0,1] = I[1,2] = I[2,1] = self.cov
+        # I[0,2] = I[2,0] = I[1,0] / 1.15
         L = torch.cholesky(I).to('cuda')
 
         N = x.shape[0]
@@ -308,8 +317,10 @@ class LangevinCorrector(Corrector):
             grad = torch.matmul(
                 (L@L), grad.permute(0, 2, 3, 1).unsqueeze(-1)
             ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
-
-        # Should I scale the noises after stretching?
+            
+            correlated_noise = self.correlate_pixels(correlated_noise)
+            
+            # Should I scale the noises after stretching?
             # grad_norm: tensor.float64
             grad_norm = torch.norm(
                 grad.reshape(grad.shape[0], -1), dim=-1
@@ -463,7 +474,7 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
 
             # This is where I can save intermediate generations
             for i in range(sde.N):
-                corrector.cov = 0.95 * np.exp(-i / 350)
+                corrector.cov = 0.6 * np.exp(-i / 250)
                 t = timesteps[i]
                 vec_t = torch.ones(shape[0], device=t.device) * t
                 x, x_mean = corrector_update_fn(x, vec_t, model=model)
