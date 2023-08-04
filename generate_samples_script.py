@@ -4,6 +4,7 @@ import time
 from datetime import datetime
 import os
 import atexit
+import argparse
 
 from generate_samples_functions import * 
 
@@ -11,8 +12,8 @@ from generate_samples_functions import *
 
 print(datetime.now())
 
-desired_samples = 1000
-batch_size = 128
+desired_samples = 3000
+batch_size = 160
 cov = 0
 
 # list of GPU IDs and corresponding names
@@ -29,7 +30,11 @@ ray_machines = ([f'ray0{i}' for i in range(1, 7)]
 
 gpu_names = ray_machines #+ ['gpu'+n for n in gpu_ids]
 gpu_names.remove('ray23')
-# gpu_names.remove('ray23')
+gpu_names.remove('ray06')
+gpu_names.remove('ray07')
+gpu_names.remove('ray22')
+gpu_names.remove('ray02')
+gpu_names.remove('ray05')
 
 if len(gpu_names)>5:
     batch_size = min(batch_size, 
@@ -56,6 +61,13 @@ env_name = "score_sde_env"
 
 save_samples_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/'
                      f'all_samples_{desired_samples}.npz')
+
+parser = argparse.ArgumentParser(
+	description='Give hyperparameters for optuna trial'
+	)
+parser.add_argument('-p', '--params', nargs='+', default=[], 
+					help='optuna params list')
+args = parser.parse_args()
 
 remove_old_files(previously_saved_files)
 
@@ -87,7 +99,8 @@ print(gpu_names)
 # start processes on all machines
 for i in range(len(gpu_names)):
     start_process(i, gpu_names, conda_sh, env_name, python_script,
-                  processes, batch_size=batch_size, cov=cov)
+                  processes, batch_size=batch_size, cov=cov, 
+                  params=args.params)
 
 all_images = np.zeros((1,3,32,32))
 
@@ -109,7 +122,7 @@ while processes:
                         + gpu_names[i] + '_samples.npz')
 
             # Try to load the data file for up to 5 seconds
-            delay_time = 15
+            delay_time = 20
             for t in range(delay_time):
                 try:
                     data = np.load(file_path)  # Try to load the data file
@@ -152,7 +165,8 @@ while processes:
             processes[i] = start_process(i, gpu_names, conda_sh, 
                                          env_name, python_script, 
                                          processes, return_process=True, 
-                                         batch_size=batch_size, cov=cov)
+                                         batch_size=batch_size, cov=cov,
+                                         params=args.params)
             # print(f'[{gpu_names[i]}] The next PID is {processes[i].pid}')
             
             try:
@@ -177,5 +191,7 @@ time.sleep(20)
 merge_intermediate_samples(gpu_names, desired_samples)
 
 cleanup_wrapper()
+
+# from TEMPint_fids import * 
 
 # Maybe I should add a compute FID step here??
