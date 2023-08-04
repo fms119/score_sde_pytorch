@@ -58,7 +58,7 @@ def scale_batch_size(gpu_name):
         return 1
 
 def start_process(i, gpu_names, conda_sh, env_name, python_script, processes,
-                   return_process=False, batch_size=64, cov=0):
+                   return_process=False, batch_size=64, cov=0, params=[]):
     '''Starts a process on a specific GPU. Initially it creates a list of 
     processes but once a process has been run it starts another one and returns
     it'''
@@ -76,7 +76,8 @@ def start_process(i, gpu_names, conda_sh, env_name, python_script, processes,
         # Append the GPU name to the output
         # 'nice -n 1' 
         f'nice -n 1 python {python_script} '
-        f'--batch_size {scale_batch_size(gpu_name) * batch_size} --gpu {gpu_name} --cov {cov}'
+        f'--batch_size {scale_batch_size(gpu_name) * batch_size} --gpu {gpu_name} --cov {cov} '
+        f'--params {params[0]} {params[1]} {params[2]} {params[3]}'  
         f' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
     )
     process = subprocess.Popen(command, shell=True)
