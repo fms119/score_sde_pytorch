@@ -32,8 +32,10 @@ parser.add_argument('-b', '--batch_size', type=int, default=2,
 					help='Number of images to be generated per machine')
 parser.add_argument('-g', '--gpu', type=str, default='texel05', 
 					help='which GPU in list has this come from')
-parser.add_argument('-c', '--cov', type=str, default=0.7, 
+parser.add_argument('-c', '--cov', type=str, default=0.6, 
 					help='channel covariance')
+parser.add_argument('-p', '--params', nargs='+', default=[], 
+					help='optuna params list')
 args = parser.parse_args()
 
 
@@ -102,7 +104,9 @@ sampling_fn = sampling.get_pc_sampler(sde, shape, predictor, corrector,
   									  eps=sampling_eps, device=config.device,
 )
 
-x, n = sampling_fn(score_model, args.gpu)
+params = [float(x) for x in args.params]
+
+x, n = sampling_fn(score_model, args.gpu, *params)
 
 numpy_x = x.cpu().numpy()
 		
