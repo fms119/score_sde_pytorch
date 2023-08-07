@@ -276,7 +276,7 @@ class LangevinCorrector(Corrector):
     def correlate_pixels(self, noise, grad=False):
         '''This is really slow, clean up later, L can be defined just once
         and saved as an attribute not twice for noise and gradient. '''
-        off_diag_cov = self.cov
+        off_diag_cov = self.spa_cov
         pixel_cov = (torch.eye(32) 
                 + torch.diag(off_diag_cov*torch.ones(31), -1) + torch.diag(off_diag_cov*torch.ones(31), 1)
                 + torch.diag(0.5*off_diag_cov*torch.ones(30), -2) + torch.diag(0.5*off_diag_cov*torch.ones(30), 2)
@@ -298,7 +298,7 @@ class LangevinCorrector(Corrector):
         L = torch.cholesky(channel_covariance).to('cuda')
 
         I = torch.eye(3)
-        # I[1,0] = I[0,1] = I[1,2] = I[2,1] = self.cov
+        I[1,0] = I[0,1] = I[1,2] = I[2,1] = self.cha_cov
         # I[0,2] = I[2,0] = I[1,0] / 1.15
         L = torch.cholesky(I).to('cuda')
 
@@ -464,7 +464,7 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
                                             snr=snr,
                                             n_steps=n_steps)
 
-    def pc_sampler(model, gpu_name):
+    def pc_sampler(model, gpu_name, k_cha=0, k_spa=0, d_cha=1, d_spa=1):
         """ The PC sampler funciton.
 
         Args:
@@ -479,7 +479,8 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
 
             # This is where I can save intermediate generations
             for i in range(sde.N):
-                corrector.cov = 0 * np.exp(-(i**2) / 15000)
+                corrector.cha_cov = k_cha * np.exp(-(i**2) / d_cha)
+                corrector.spa_cov = k_spa * np.exp(-(i**2) / d_spa)
                 t = timesteps[i]
                 vec_t = torch.ones(shape[0], device=t.device) * t
                 x, x_mean = corrector_update_fn(x, vec_t, model=model)
