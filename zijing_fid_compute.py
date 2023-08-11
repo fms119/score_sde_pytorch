@@ -225,7 +225,7 @@ def check_or_download_inception(inception_path):
         return '/cns/iz-d/home/nijkamp/models/inception/classify_image_graph_def.pb'
 
 
-def fid_score(create_session, data, samples, path='/tmp', cpu_only=False, base_size=None):
+def fid_score(create_session, data, samples, path='/tmp', cpu_only=False, base_size='50k'):
 
     with create_session() as sess:
         if cpu_only:

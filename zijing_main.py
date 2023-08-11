@@ -3,7 +3,7 @@ import numpy as np
 from zijing_fid_compute import fid_score
 
 
-def compute_fid(x_data, x_samples, use_cpu=False, base_size=None):
+def compute_fid(x_data, x_samples, use_cpu=False, base_size='50k'):
 
     assert type(x_data) == np.ndarray
     assert type(x_samples) == np.ndarray
