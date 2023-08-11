@@ -16,11 +16,12 @@ oaks.remove('oak15')
 oaks.remove('oak27')
 oaks.remove('oak32')
 
+print(oaks[:10])
 for i in range(1, 11):
     for j in range(2):
         gpu_name = oaks[i-1+10*j]
         # Maybe just run on 2 different machines??
-        image_path = f'/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/{i}/all_samples_1000.npz'
+        image_path = f'/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/{i}/all_samples_3000.npz'
         save_path = f'/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/fids/{i}'
 
         command = (
@@ -32,10 +33,11 @@ for i in range(1, 11):
             f'source {conda_sh} && '
             f'conda activate {env_name} && '
             # Echo the gpu_name before running the script
-            f'echo Running on {gpu_name} && '  
+            # f'echo Running on {gpu_name} && '  
             # Append the GPU name to the output
             f'python {python_script} '
             f'--source {source} --image_path {image_path} --save_path {save_path}'
             f' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
         )
+        
         subprocess.Popen(command, shell=True)
