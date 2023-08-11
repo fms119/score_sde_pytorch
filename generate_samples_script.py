@@ -13,7 +13,7 @@ from generate_samples_functions import *
 print(datetime.now())
 
 desired_samples = 3000
-batch_size = 160
+batch_size = 180
 cov = 0
 
 # list of GPU IDs and corresponding names
@@ -30,25 +30,11 @@ ray_machines = ([f'ray0{i}' for i in range(1, 7)]
 
 gpu_names = ray_machines #+ ['gpu'+n for n in gpu_ids]
 gpu_names.remove('ray23')
-gpu_names.remove('ray06')
-gpu_names.remove('ray07')
-gpu_names.remove('ray22')
-gpu_names.remove('ray02')
+gpu_names.remove('ray08')
+gpu_names.remove('ray04')
+gpu_names.remove('ray10')
+# gpu_names.remove('ray01')
 gpu_names.remove('ray05')
-
-if len(gpu_names)>5:
-    batch_size = min(batch_size, 
-    max(desired_samples//(len(gpu_names)-3), 16)
-    )
-
-# Could potentially use the ssh_gpu_checker to select all machines with 1 job
-#   running, put these into a list and then run the jobs on this. Then batch
-#   size can be very large.
-
-previously_saved_files = [
-    '/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
-    + gpu_name + '_samples.npz' for gpu_name in gpu_names
-    ]
 
 # path to your python script
 python_script = ('/homes/fms119/Projects/doc_msc_project/'
@@ -65,9 +51,34 @@ save_samples_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/'
 parser = argparse.ArgumentParser(
 	description='Give hyperparameters for optuna trial'
 	)
-parser.add_argument('-p', '--params', nargs='+', default=[], 
+parser.add_argument('-p', '--params', nargs='+', default=[0,0,1,1, 0.16], 
 					help='optuna params list')
+parser.add_argument('-s', '--split', type=int, default=0, 
+					help='split gpu_names into s')
 args = parser.parse_args()
+
+# Testing to see if shuffling the gpu names has an effect on rays being left 
+# out
+# np.random.shuffle(gpu_names)
+print(gpu_names)
+
+if args.split:
+    optuna_nodes = 2
+    allocation = len(gpu_names) // optuna_nodes
+    gpu_names = gpu_names[(args.split-1) * allocation:
+                          (args.split) * allocation]
+    save_samples_path = save_samples_path[:-4] + f'_{args.split}.npz'
+
+# Set batch size
+if len(gpu_names)>5:
+    batch_size = min(batch_size, 
+    max(desired_samples//(len(gpu_names)-4), 16)
+    )
+
+previously_saved_files = [
+    '/vol/bitbucket/fms119/score_sde_pytorch/samples/' 
+    + gpu_name + '_samples.npz' for gpu_name in gpu_names
+    ]
 
 remove_old_files(previously_saved_files)
 
@@ -90,11 +101,6 @@ def cleanup_wrapper():
 atexit.register(cleanup_wrapper)
 
 print(f'The length of gpu_names is {len(gpu_names)}')
-
-# Testing to see if shuffling the gpu names has an effect on rays being left 
-# out
-np.random.shuffle(gpu_names)
-print(gpu_names)
 
 # start processes on all machines
 for i in range(len(gpu_names)):
