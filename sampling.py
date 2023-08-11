@@ -193,7 +193,29 @@ class EulerMaruyamaPredictor(Predictor):
 class ReverseDiffusionPredictor(Predictor):
     def __init__(self, sde, score_fn, probability_flow=False):
         super().__init__(sde, score_fn, probability_flow)
+    
+    # Preconditioned update
+    def update_fn(self, x, t):
+        I = torch.eye(3)
+        I[1,0] = I[0,1] = I[1,2] = I[2,1] = self.cha_cov
+        # I[0,2] = I[2,0] = I[1,0] / 1.4
+        L = torch.cholesky(I).to('cuda')
+        N = x.shape[0]
+        f, G = self.rsde.discretize(x, t)
+        
+        reshaped_rvs = torch.randn((N, 32, 32, 3, 1)).to('cuda')
+        correlated_noise = torch.matmul(
+            L, reshaped_rvs
+        ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
+        f = torch.matmul(
+            (L@L), f.permute(0, 2, 3, 1).unsqueeze(-1)
+        ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)            
 
+        # z = torch.randn_like(x)
+        x_mean = x - f
+        x = x_mean + G[:, None, None, None] * correlated_noise
+        return x, x_mean
+   
     def update_fn(self, x, t):
         f, G = self.rsde.discretize(x, t)
         z = torch.randn_like(x)
@@ -291,15 +313,16 @@ class LangevinCorrector(Corrector):
         sde = self.sde
         score_fn = self.score_fn
         n_steps = self.n_steps
+        # This is a variable that counts down from 1000 to 0
+        if int((t * (sde.N - 1) / sde.T).long()[0].item()) == 700:
+            # print('Decreased snr')
+            # print(int((t * (sde.N - 1) / sde.T).long()[0].item()))
+            self.snr = 0.16
         target_snr = self.snr
-        channel_covariance = torch.tensor([[1.0000, 0.9100, 0.7831],
-                                           [0.9100, 1.0000, 0.9056],
-                                           [0.7831, 0.9056, 1.0000]])
-        L = torch.cholesky(channel_covariance).to('cuda')
 
         I = torch.eye(3)
         I[1,0] = I[0,1] = I[1,2] = I[2,1] = self.cha_cov
-        # I[0,2] = I[2,0] = I[1,0] / 1.15
+        I[0,2] = I[2,0] = I[1,0] / 1.3
         L = torch.cholesky(I).to('cuda')
 
         N = x.shape[0]
@@ -309,7 +332,7 @@ class LangevinCorrector(Corrector):
         else:
             alpha = torch.ones_like(t)
 
-        for i in range(n_steps):                 
+        for i in range(n_steps):    
             # x.shape = (N, 3, 32, 32)
             grad = score_fn(x, t)
             # noise.shape = (N, 3, 32, 32)
@@ -343,7 +366,59 @@ class LangevinCorrector(Corrector):
         return x, x_mean
 
 
+@register_corrector(name='rms')
+class RmsCorrector(Corrector):
+    def __init__(self, sde, score_fn, snr, n_steps):
+        super().__init__(sde, score_fn, snr, n_steps)
+        self.a = 0.9
+        self.l = 0.9
+        self.V = torch.zeros(3,32,32).to('cuda')
+        self.counter = 0
+        if not isinstance(sde, sde_lib.VPSDE) \
+                and not isinstance(sde, sde_lib.VESDE) \
+                and not isinstance(sde, sde_lib.subVPSDE):
+            raise NotImplementedError(
+                f"SDE class {sde.__class__.__name__} not yet supported.")
 
+    def update_fn(self, x, t):
+        sde = self.sde
+        score_fn = self.score_fn
+        n_steps = self.n_steps
+        target_snr = self.snr
+        N = x.shape[0]
+
+        if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
+            timestep = (t * (sde.N - 1) / sde.T).long()
+            alpha = sde.alphas.to(t.device)[timestep]
+        else:
+            alpha = torch.ones_like(t)
+
+        for i in range(n_steps):
+            grad = score_fn(x, t)
+            
+            if not (t * (sde.N - 1) / sde.T).long()[0].item() % 99:
+                print(f'Mean: {grad.mean()}, Std: {grad.std()}')
+
+            self.V = (self.a*self.V) + (1-self.a)*(grad**2)
+            G = 1 / (self.l + torch.sqrt(self.V))
+
+            grad = G * grad
+            noise = G * torch.randn_like(x)
+
+            if not (t * (sde.N - 1) / sde.T).long()[0].item() % 99:
+                print(f'Mean: {grad.mean()}, Std: {grad.std()}')
+            # grad_norm: float64
+            grad_norm = torch.norm(grad.reshape(
+                grad.shape[0], -1), dim=-1).mean()
+            noise_norm = torch.norm(noise.reshape(
+                noise.shape[0], -1), dim=-1).mean()
+            
+            step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
+            x_mean = x + step_size[:, None, None, None] * grad
+            # noise added
+            x = x_mean + torch.sqrt(step_size * 2)[:, None, None, None] * noise
+
+        return x, x_mean
 
 
 
@@ -448,7 +523,8 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
             device: PyTorch device.
 
     Returns:
-            A sampling function that returns samples and the number of function evaluations during sampling.
+            A sampling function that returns samples and the number of function 
+            evaluations during sampling.
     """
     # Create predictor & corrector update functions
     predictor_update_fn = functools.partial(shared_predictor_update_fn,
