@@ -36,7 +36,6 @@ def cleanup(processes):
         # else:
         #     print(f'Process {i} of {n} had already finished')
 
-        
 def validate_images(loaded_data, key='x'):
     '''Check if the data generation has failed on this GPU'''
     images = loaded_data[key]
@@ -58,7 +57,7 @@ def scale_batch_size(gpu_name):
         return 1
 
 def start_process(i, gpu_names, conda_sh, env_name, python_script, processes,
-                   return_process=False, batch_size=64, cov=0, params=[]):
+                   return_process=False, batch_size=64, cov=0, params=[0, 0, 1, 1, 0.16]):
     '''Starts a process on a specific GPU. Initially it creates a list of 
     processes but once a process has been run it starts another one and returns
     it'''
@@ -72,12 +71,12 @@ def start_process(i, gpu_names, conda_sh, env_name, python_script, processes,
         f'source {conda_sh} && '
         f'conda activate {env_name} && '
         # Echo the gpu_name before running the script
-        f'echo Running on {gpu_name} && '  
+        # f'echo Running on {gpu_name} && '  
         # Append the GPU name to the output
         # 'nice -n 1' 
         f'nice -n 1 python {python_script} '
         f'--batch_size {scale_batch_size(gpu_name) * batch_size} --gpu {gpu_name} --cov {cov} '
-        f'--params {params[0]} {params[1]} {params[2]} {params[3]}'  
+        f'--params {params[0]} {params[1]} {params[2]} {params[3]} {params[4]}'  
         f' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
     )
     process = subprocess.Popen(command, shell=True)
@@ -86,7 +85,6 @@ def start_process(i, gpu_names, conda_sh, env_name, python_script, processes,
         return process
     else:
         processes.append(process)
-
 
 def kill_processes(gpu_name):
     command = [
@@ -118,6 +116,51 @@ def merge_intermediate_samples(gpu_names, desired_samples):
             images = data['images']
             all_images = np.concatenate((all_images, images))
         if all_images.shape[0]>=1000:
-            np.savez(os.path.join(dir_path, f'all_samples_{desired_samples}.npz'), images=all_images[-desired_samples:])
+            np.savez(os.path.join(dir_path, f'all_samples_{desired_samples}.npz'), 
+                     images=all_images[-desired_samples:])
         else:
             print(f'Incorrect size for {i}')
+
+def compute_intermediate_fid():
+    '''
+    Compute the intermediate FIDs. The image files are created by merge_intermediate_samples().
+    '''
+    source = 'test'
+    python_script = '/homes/fms119/Projects/doc_msc_project/score_sde_pytorch/fid_size_experiment.py'
+    # path to the conda activation script
+    conda_sh = "/vol/bitbucket/fms119/miniconda3/etc/profile.d/conda.sh"
+    # the name of the environment to activate
+    env_name = "score_sde_env"
+
+    oaks = [f'oak{i:02}' for i in range(2, 36)]
+    oaks.remove('oak02')
+    oaks.remove('oak03')
+    oaks.remove('oak05')
+    oaks.remove('oak15')
+    oaks.remove('oak27')
+    oaks.remove('oak32')
+    print(oaks)
+    for i in range(1, 11):
+        for j in range(2):
+            gpu_name = oaks[i-1+10*j]
+            # Maybe just run on 2 different machines??
+            image_path = f'/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/{i}/all_samples_1000.npz'
+            save_path = f'/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/fids/{i}'
+
+            command = (
+                f'ssh {gpu_name} '
+                '"export CUDA_HOME=/vol/cuda/12.0.0 && '
+                'export LD_LIBRARY_PATH=/vol/cuda/12.0.0/targets/x86_64-linux/lib:$LD_LIBRARY_PATH && '
+                # Added this line to set log level
+                'export TF_CPP_MIN_LOG_LEVEL=3 && '  
+                f'source {conda_sh} && '
+                f'conda activate {env_name} && '
+                # Echo the gpu_name before running the script
+                # f'echo Running on {gpu_name} && '  
+                # Append the GPU name to the output
+                f'python {python_script} '
+                f'--source {source} --image_path {image_path} --save_path {save_path}'
+                f' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
+            )
+            
+            subprocess.Popen(command, shell=True)
