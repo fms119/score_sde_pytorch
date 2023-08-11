@@ -5,24 +5,6 @@ import gc
 from zijing_main import compute_fid_nchw
 import argparse
 
-parser = argparse.ArgumentParser(
-    description='Configure batch sizes and gpu name.'
-)
-parser.add_argument('-s', '--source', type=str, default='test',
-                    help='Are we computing FID for new params?')
-parser.add_argument('-i', '--image_path', type=str,
-                    default='/vol/bitbucket/fms119/score_sde_pytorch/samples/all_samples_1000.npz',
-                    help='Where are the images to be evaluated?')
-parser.add_argument('-save', '--save_path', type=str,
-                    default=('/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/fids/00.npz'),
-                    help='Where is the FID to be saved?')
-args = parser.parse_args()
-
-
-source = args.source
-image_path = args.image_path
-save_path = args.save_path
-
 
 def get_fid(i=0, n=0, base_size='50k', source='test', file_path=''):
     '''
@@ -53,6 +35,26 @@ def get_fid(i=0, n=0, base_size='50k', source='test', file_path=''):
 
 
 if __name__ == '__main__':
+
+    #I think this argparsing is unnecessary as I am unlikely to enter a file path 
+    # as an argument
+    parser = argparse.ArgumentParser(
+        description='Configure batch sizes and gpu name.'
+    )
+    parser.add_argument('-s', '--source', type=str, default='test',
+                        help='Are we computing FID for new params?')
+    parser.add_argument('-i', '--image_path', type=str,
+                        default='/vol/bitbucket/fms119/score_sde_pytorch/samples/synthetic_all_samples_20000.npz',
+                        help='Where are the images to be evaluated?')
+    parser.add_argument('-save', '--save_path', type=str,
+                        default=('/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/fids/00.npz'),
+                        help='Where is the FID to be saved?')
+    args = parser.parse_args()
+
+    source = args.source
+    image_path = args.image_path
+    save_path = args.save_path
+
     fid = get_fid(source=source, file_path=image_path)
     print(f'{fid} for {image_path}')
     # You should always be saving progess during experiments like this.
