@@ -309,21 +309,130 @@ class LangevinCorrector(Corrector):
         correlated_images = L @ noise
         return (L @ correlated_images.permute(0,1,3,2)).permute(0,1,3,2)
 
+    def correlate_pixels(self, noise, grad=False):
+        '''This is really slow, clean up later, L can be defined just once
+        and saved as an attribute not twice for noise and gradient. '''
+        off_diag_cov = self.spa_cov
+        pixel_cov = (torch.eye(32)
+                    + torch.diag(off_diag_cov*torch.ones(31), -1) +
+                    torch.diag(off_diag_cov*torch.ones(31), 1)
+                    + torch.diag(0.7*off_diag_cov*torch.ones(30), -2) +
+                    torch.diag(0.7*off_diag_cov*torch.ones(30), 2)
+                    + torch.diag(0.5*off_diag_cov*torch.ones(29), -3) +
+                    torch.diag(0.5*off_diag_cov*torch.ones(29), 3)
+                    ).to('cuda')
+        L = torch.cholesky(pixel_cov)
+        if grad:
+            L = L@L
+        correlated_images = L @ noise
+        return (L @ correlated_images.permute(0, 1, 3, 2)).permute(0, 1, 3, 2)
+
+    def correlate_channels(self, reshaped_rvs, grad):
+        I = torch.eye(3)
+        I[1, 0] = I[0, 1] = I[1, 2] = I[2, 1] = self.cha_cov
+        I[0, 2] = I[2, 0] = I[1, 0] / 1.3
+        L = torch.cholesky(I).to('cuda')
+        
+        correlated_noise = torch.matmul(
+            L, reshaped_rvs
+        ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
+        
+        grad = torch.matmul(
+            (L@L), grad.permute(0, 2, 3, 1).unsqueeze(-1)
+        ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
+        
+        return correlated_noise, grad
+
+    def precondition(self, reshaped_rvs, grad):
+        correlated_noise, grad = self.correlate_channels(reshaped_rvs, grad)
+
+        correlated_noise = self.correlate_pixels(correlated_noise)
+            
+        grad = self.correlate_pixels(grad, grad=True)
+
+        return correlated_noise, grad
+    
+    # def update_fn(self, x, t):
+    #     sde = self.sde
+    #     score_fn = self.score_fn
+    #     n_steps = self.n_steps
+    #     # This is a variable that counts down from 1000 to 0
+    #     # if int((t * (sde.N - 1) / sde.T).long()[0].item()) == 700:
+    #         # print('Decreased snr')
+    #         # print(int((t * (sde.N - 1) / sde.T).long()[0].item()))
+    #         # self.snr = 0.16
+    #     target_snr = self.snr
+
+    #     I = torch.eye(3)
+    #     I[1,0] = I[0,1] = I[1,2] = I[2,1] = self.cha_cov
+    #     I[0,2] = I[2,0] = I[1,0] / 1.3
+    #     L = torch.cholesky(I).to('cuda')
+
+    #     N = x.shape[0]
+    #     if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
+    #         timestep = (t * (sde.N - 1) / sde.T).long()
+    #         alpha = sde.alphas.to(t.device)[timestep]
+    #     else:
+    #         alpha = torch.ones_like(t)
+
+    #     for i in range(n_steps):    
+    #         # x.shape = (N, 3, 32, 32)
+    #         grad = score_fn(x, t)
+            
+    #         np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/grad_means/{(t * (sde.N - 1) / sde.T).long()[0].item()}', 
+    #                  grad_mean=grad.cpu().numpy()
+    #                  )
+
+    #         # noise.shape = (N, 3, 32, 32)
+    #         # noise = torch.randn_like(x).unsqueeze(-1)
+    #         reshaped_rvs = torch.randn((N, 32, 32, 3, 1)).to('cuda')
+    #         correlated_noise = torch.matmul(
+    #             L, reshaped_rvs
+    #         ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
+    #         grad = torch.matmul(
+    #             (L@L), grad.permute(0, 2, 3, 1).unsqueeze(-1)
+    #         ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)            
+
+    #         correlated_noise = self.correlate_pixels(correlated_noise)
+    #         grad = self.correlate_pixels(grad, grad=True)
+
+    #         # Should I scale the noises after stretching?
+    #         # grad_norm: tensor.float64
+    #         grad_norm = torch.norm(
+    #             grad.reshape(grad.shape[0], -1), dim=-1
+    #         )#.mean()
+            
+    #         np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/grad_means/cor_{(t * (sde.N - 1) / sde.T).long()[0].item()}', 
+    #                  grad_mean=grad.cpu().numpy()
+    #                  )
+            
+    #         np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/grad_means/cor_noise{(t * (sde.N - 1) / sde.T).long()[0].item()}', 
+    #                  grad_mean=correlated_noise.cpu().numpy()
+    #                  )
+            
+    #         # noise_norm: tensor.float64
+    #         noise_norm = torch.norm(
+    #             correlated_noise.reshape(correlated_noise.shape[0], -1), dim=-1
+    #         )#.mean()
+
+    #         step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
+
+    #         np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/grad_means/step_size{(t * (sde.N - 1) / sde.T).long()[0].item()}', 
+    #                  step_size=step_size.cpu().numpy()
+    #                  )
+            
+    #         x_mean = x + step_size[:, None, None, None] * grad
+    #         # noise added
+    #         x = x_mean + torch.sqrt(step_size *
+    #                                 2)[:, None, None, None] * correlated_noise
+
+    #     return x, x_mean
+    
     def update_fn(self, x, t):
         sde = self.sde
         score_fn = self.score_fn
         n_steps = self.n_steps
-        # This is a variable that counts down from 1000 to 0
-        if int((t * (sde.N - 1) / sde.T).long()[0].item()) == 700:
-            # print('Decreased snr')
-            # print(int((t * (sde.N - 1) / sde.T).long()[0].item()))
-            self.snr = 0.16
         target_snr = self.snr
-
-        I = torch.eye(3)
-        I[1,0] = I[0,1] = I[1,2] = I[2,1] = self.cha_cov
-        I[0,2] = I[2,0] = I[1,0] / 1.3
-        L = torch.cholesky(I).to('cuda')
 
         N = x.shape[0]
         if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
@@ -338,18 +447,9 @@ class LangevinCorrector(Corrector):
             # noise.shape = (N, 3, 32, 32)
             # noise = torch.randn_like(x).unsqueeze(-1)
             reshaped_rvs = torch.randn((N, 32, 32, 3, 1)).to('cuda')
-            correlated_noise = torch.matmul(
-                L, reshaped_rvs
-            ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
-            grad = torch.matmul(
-                (L@L), grad.permute(0, 2, 3, 1).unsqueeze(-1)
-            ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)            
 
-            correlated_noise = self.correlate_pixels(correlated_noise)
-            grad = self.correlate_pixels(grad, grad=True)
-            
-            # Should I scale the noises after stretching?
-            # grad_norm: tensor.float64
+            correlated_noise, grad = self.precondition(reshaped_rvs, grad)
+
             grad_norm = torch.norm(
                 grad.reshape(grad.shape[0], -1), dim=-1
             ).mean()
@@ -357,11 +457,162 @@ class LangevinCorrector(Corrector):
             noise_norm = torch.norm(
                 correlated_noise.reshape(correlated_noise.shape[0], -1), dim=-1
             ).mean()
+
             step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
+            
             x_mean = x + step_size[:, None, None, None] * grad
             # noise added
             x = x_mean + torch.sqrt(step_size *
                                     2)[:, None, None, None] * correlated_noise
+
+        return x, x_mean
+
+
+class ExploringCorrector(Corrector):
+    def __init__(self, sde, score_fn, snr, n_steps):
+        super().__init__(sde, score_fn, snr, n_steps)
+        if not isinstance(sde, sde_lib.VPSDE) \
+                and not isinstance(sde, sde_lib.VESDE) \
+                and not isinstance(sde, sde_lib.subVPSDE):
+            raise NotImplementedError(
+                f"SDE class {sde.__class__.__name__} not yet supported.")
+
+    def correlate_pixels(self, noise, grad=False):
+        '''This is really slow, clean up later, L can be defined just once
+        and saved as an attribute not twice for noise and gradient. '''
+        off_diag_cov = self.spa_cov
+        pixel_cov = (torch.eye(32) 
+                + torch.diag(off_diag_cov*torch.ones(31), -1) + torch.diag(off_diag_cov*torch.ones(31), 1)
+                + torch.diag(0.5*off_diag_cov*torch.ones(30), -2) + torch.diag(0.5*off_diag_cov*torch.ones(30), 2)
+        ).to('cuda')
+        L = torch.cholesky(pixel_cov)
+        if grad:
+            L = L@L
+        correlated_images = L @ noise
+        return (L @ correlated_images.permute(0,1,3,2)).permute(0,1,3,2)
+
+    def correlate_pixels(self, noise, grad=False):
+        '''This is really slow, clean up later, L can be defined just once
+        and saved as an attribute not twice for noise and gradient. '''
+        off_diag_cov = self.spa_cov
+        pixel_cov = (torch.eye(32)
+                    + torch.diag(off_diag_cov*torch.ones(31), -1) +
+                    torch.diag(off_diag_cov*torch.ones(31), 1)
+                    + torch.diag(0.7*off_diag_cov*torch.ones(30), -2) +
+                    torch.diag(0.7*off_diag_cov*torch.ones(30), 2)
+                    + torch.diag(0.5*off_diag_cov*torch.ones(29), -3) +
+                    torch.diag(0.5*off_diag_cov*torch.ones(29), 3)
+                    ).to('cuda')
+        L = torch.cholesky(pixel_cov)
+        if grad:
+            L = L@L
+        correlated_images = L @ noise
+        return (L @ correlated_images.permute(0, 1, 3, 2)).permute(0, 1, 3, 2)
+
+    def correlate_channels(self, reshaped_rvs, grad):
+        I = torch.eye(3)
+        I[1, 0] = I[0, 1] = I[1, 2] = I[2, 1] = self.cha_cov
+        I[0, 2] = I[2, 0] = I[1, 0] / 1.3
+        L = torch.cholesky(I).to('cuda')
+        
+        correlated_noise = torch.matmul(
+            L, reshaped_rvs
+        ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
+        
+        grad = torch.matmul(
+            (L@L), grad.permute(0, 2, 3, 1).unsqueeze(-1)
+        ).reshape(reshaped_rvs.shape[:4]).permute(0, 3, 1, 2)
+        
+        return correlated_noise, grad
+
+    def precondition(self, reshaped_rvs, grad):
+        correlated_noise, grad = self.correlate_channels(reshaped_rvs, grad)
+
+        correlated_noise = self.correlate_pixels(correlated_noise)
+            
+        grad = self.correlate_pixels(grad, grad=True)
+
+        return correlated_noise, grad
+    
+    def update_fn(self, x, t):
+        sde = self.sde
+        score_fn = self.score_fn
+        n_steps = self.n_steps
+        target_snr = self.snr
+        t_start = 700
+
+        N = x.shape[0]
+        if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
+            timestep = (t * (sde.N - 1) / sde.T).long()
+            alpha = sde.alphas.to(t.device)[timestep]
+        else:
+            alpha = torch.ones_like(t)
+
+        for i in range(n_steps):    
+            if (t * (sde.N - 1) / sde.T).long()[0]>t_start:
+                # Zoom through
+                return x, x
+
+            elif (t * (sde.N - 1) / sde.T).long()[0]<t_start:
+                # x.shape = (N, 3, 32, 32)
+                grad = score_fn(x, t)
+                # noise.shape = (N, 3, 32, 32)
+                # noise = torch.randn_like(x).unsqueeze(-1)
+                reshaped_rvs = torch.randn((N, 32, 32, 3, 1)).to('cuda')
+
+                correlated_noise, grad = self.precondition(reshaped_rvs, grad)
+
+                grad_norm = torch.norm(
+                    grad.reshape(grad.shape[0], -1), dim=-1
+                ).mean()
+                # noise_norm: tensor.float64
+                noise_norm = torch.norm(
+                    correlated_noise.reshape(correlated_noise.shape[0], -1), dim=-1
+                ).mean()
+
+                step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
+                
+                x_mean = x + step_size[:, None, None, None] * grad
+                # noise added
+                x = x_mean + torch.sqrt(step_size *
+                                        2)[:, None, None, None] * correlated_noise
+            
+            elif (t * (sde.N - 1) / sde.T).long()[0]==t_start:
+                # np.savez('/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/700', 
+                #          images=x.cpu().numpy())
+                # print('Saves images at t = 700')
+                batch = x.shape[0]
+                x = np.load(
+                    '/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/700/700.npz'
+                    )['images'][:batch]
+                x = torch.tensor(x).to('cuda')
+                    # x.shape = (N, 3, 32, 32)
+                
+                target_snr = 0.32
+                print('Traversing typical set')
+
+                for _ in range(100):
+                    grad = score_fn(x, t)
+                    # noise.shape = (N, 3, 32, 32)
+                    # noise = torch.randn_like(x).unsqueeze(-1)
+                    reshaped_rvs = torch.randn((N, 32, 32, 3, 1)).to('cuda')
+
+                    correlated_noise, grad = self.precondition(reshaped_rvs, grad)
+
+                    grad_norm = torch.norm(
+                        grad.reshape(grad.shape[0], -1), dim=-1
+                    ).mean()
+                    # noise_norm: tensor.float64
+                    noise_norm = torch.norm(
+                        correlated_noise.reshape(correlated_noise.shape[0], -1), dim=-1
+                    ).mean()
+
+                    step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
+                    
+                    x_mean = x + step_size[:, None, None, None] * grad
+                    # noise added
+                    x = x_mean + torch.sqrt(step_size *
+                                            2)[:, None, None, None] * correlated_noise
 
         return x, x_mean
 
@@ -396,8 +647,8 @@ class RmsCorrector(Corrector):
         for i in range(n_steps):
             grad = score_fn(x, t)
             
-            if not (t * (sde.N - 1) / sde.T).long()[0].item() % 99:
-                print(f'Mean: {grad.mean()}, Std: {grad.std()}')
+            if (t * (sde.N - 1) / sde.T).long()[0].item() < 30:
+                target_snr = 0.35
 
             self.V = (self.a*self.V) + (1-self.a)*(grad**2)
             G = 1 / (self.l + torch.sqrt(self.V))
@@ -555,16 +806,22 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
 
             # This is where I can save intermediate generations
             for i in range(sde.N):
-                corrector.cha_cov = k_cha * np.exp(-(i**2) / d_cha)
-                corrector.spa_cov = k_spa * np.exp(-(i**2) / d_spa)
+                if i%9999:
+                    corrector.cha_cov = k_cha * np.exp(-(i**2) / d_cha)
+                    corrector.spa_cov = k_spa * np.exp(-(i**2) / d_spa)
+                else:
+                    corrector.cha_cov = 0
+                    corrector.spa_cov = 0
                 t = timesteps[i]
                 vec_t = torch.ones(shape[0], device=t.device) * t
                 x, x_mean = corrector_update_fn(x, vec_t, model=model)
                 x, x_mean = predictor_update_fn(x, vec_t, model=model)
-                if not (i+1)%100:
-                    dir = (i+1)//100
-                    np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/{dir}/{gpu_name}',
-                             images=x_mean.cpu().numpy())
+
+                # if not (i+1)%10:
+                #     dir = (i+1)//10
+                #     np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/{dir}/{gpu_name}',
+                #              images=x_mean.cpu().numpy())
+                    
             return inverse_scaler(x_mean if denoise else x), sde.N * (n_steps + 1)
 
     return pc_sampler
