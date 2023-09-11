@@ -1,3 +1,7 @@
+# MSc
+Code for MSc thesis, the main changes in this code are all in sampling.py where you will find the preconditioning algorithm as well as midway PCsampling with exploring starts. 
+___________________ 
+
 # Score-Based Generative Modeling through Stochastic Differential Equations
 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/score-based-generative-modeling-through-1/image-generation-on-cifar-10)](https://paperswithcode.com/sota/image-generation-on-cifar-10?p=score-based-generative-modeling-through-1)
