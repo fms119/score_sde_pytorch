@@ -54,6 +54,7 @@ def _get_inception_layer(sess):
 
 # -------------------------------------------------------------------------------
 
+
 def get_activations(images, sess, batch_size=50, verbose=False):
     """Calculates the activations of the pool_3 layer for all images.
 
@@ -186,8 +187,25 @@ def calculate_activation_statistics(images, sess, batch_size=50, verbose=False, 
         data = np.load(path)
         mu = data['mu']
         sigma = data['sigma']
+    elif base_size=='celeba_50k':
+        # path = ('/vol/bitbucket/fms119/ncsn_vol/samples/CELEBA_50k.npz')
+        # data = np.load(path)['images']
+        # images = (255*data).transpose(0,2,3,1)
+        # act = get_activations(images, sess, batch_size, verbose)
+        # mu = np.mean(act, axis=0)
+        # sigma = np.cov(act, rowvar=False)
+        # print('Saving celebA stats')
+        # save_path = ('/vol/bitbucket/fms119/ncsn_vol/run/datasets/celeba/'
+        #              'assets/stats/celeba_50k')        
+        # np.savez(save_path, mu=mu, sigma=sigma)
+        path = ('/vol/bitbucket/fms119/ncsn_vol/run/datasets/celeba/'
+                'assets/stats/celeba_50k.npz')
+        data = np.load(path)
+        mu = data['mu']
+        sigma = data['sigma']
     else:
         act = get_activations(images, sess, batch_size, verbose)
+        print('Now has stats for gen images.')
         mu = np.mean(act, axis=0)
         sigma = np.cov(act, rowvar=False)
 

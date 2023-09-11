@@ -1,11 +1,10 @@
 from sampling import (ReverseDiffusionPredictor,
-                      RmsCorrector,
                       LangevinCorrector,
+                      ExploringCorrector,
                       EulerMaruyamaPredictor,
-                      AncestralSamplingPredictor,
                       NoneCorrector,
                       NonePredictor,
-                      AnnealedLangevinDynamics)
+)
 import datasets
 from sde_lib import VESDE
 import sampling
@@ -22,14 +21,21 @@ from models.ema import ExponentialMovingAverage
 
 from utils import restore_checkpoint
 
-print('Importing')
 
 
 parser = argparse.ArgumentParser(
     description='Configure batch sizes and gpu name.'
 )
-parser.add_argument('-b', '--batch_size', type=int, default=64,
+parser.add_argument('-b', '--batch_size', type=int, default=16,
                     help='Number of images to be generated per machine')
+parser.add_argument('-N', '--num_scales', type=int, 
+                    default=310,
+                    help='Number of images to be generated per machine')
+
+parser.add_argument('-r', '--reps', type=int, 
+                    default=0,
+                    help='Number of images to be generated per machine')
+
 parser.add_argument('-g', '--gpu', type=str, default='ray05',
                     help='which GPU in list has this come from')
 parser.add_argument('-c', '--cov', type=str, default=0,
@@ -37,6 +43,7 @@ parser.add_argument('-c', '--cov', type=str, default=0,
 parser.add_argument('-p', '--params', nargs='+', default=[0,0,1,1,0.16],
                     help='optuna params list')
 args = parser.parse_args()
+
 
 
 # @title Load the score-based model
@@ -55,7 +62,8 @@ if sde.lower() == 'vesde':
     #
     config = configs.get_config()
 
-    config.model.num_scales = 100
+    config.model.num_scales = args.num_scales
+    print(f'Num scales is {config.model.num_scales}')
 
     sde = VESDE(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max,
                 #  This is the number of time steps, originally 1000
@@ -93,11 +101,17 @@ shape = (batch_size, channels, img_size, img_size)
 # @param ["EulerMaruyamaPredictor", "AncestralSamplingPredictor", "ReverseDiffusionPredictor", "None"] {"type": "raw"}
 predictor = ReverseDiffusionPredictor
 # @param ["LangevinCorrector", "AnnealedLangevinDynamics", "None"] {"type": "raw"}
-corrector = LangevinCorrector
+
+
+# corrector = LangevinCorrector
+corrector = ExploringCorrector
+
+
 
 # corrector.cov = args.cov
 
 params = [float(x) for x in args.params]
+print(params)
 snr = params[-1]  # @param {"type": "number"}
 params = params[:-1]
 
@@ -105,13 +119,16 @@ n_steps = 1  # @param {"type": "integer"}
 probability_flow = False  # @param {"type": "boolean"}
 
 gc.collect()
-
-sampling_fn = sampling.get_pc_sampler(sde, shape, predictor, corrector,
-                                      inverse_scaler, snr, n_steps=n_steps,
-                                      probability_flow=probability_flow,
-                                      continuous=config.training.continuous,
-                                      eps=sampling_eps, device=config.device,
-                                      )
+# get_pc_sampler
+# get_pc_explorer
+sampling_fn = sampling.get_pc_explorer(sde, shape, predictor, corrector,
+                                       inverse_scaler, snr, n_steps=n_steps,
+                                       probability_flow=probability_flow,
+                                       continuous=config.training.continuous,
+                                       eps=sampling_eps, device=config.device,
+                                    #    Remove when doing Langevin
+                                       reps=args.reps
+                                       )
 
 
 x, n = sampling_fn(score_model, args.gpu, *params)

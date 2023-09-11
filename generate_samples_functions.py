@@ -39,7 +39,7 @@ def cleanup(processes):
 def validate_images(loaded_data, key='x'):
     '''Check if the data generation has failed on this GPU'''
     images = loaded_data[key]
-    if images.reshape(-1).std()<0.17:
+    if images.reshape(-1).std()<0.15:
         return False
     elif np.isnan(images.reshape(-1).std()):
         return False
@@ -57,29 +57,56 @@ def scale_batch_size(gpu_name):
         return 1
 
 def start_process(i, gpu_names, conda_sh, env_name, python_script, processes,
-                   return_process=False, batch_size=64, cov=0, params=[0, 0, 1, 1, 0.16]):
+                   return_process=False, batch_size=64, cov=0, params=[0, 0, 1, 1, 0.16],
+                   num_scales=0, reps=0):
     '''Starts a process on a specific GPU. Initially it creates a list of 
     processes but once a process has been run it starts another one and returns
     it'''
     gpu_name = gpu_names[i]
-    command = (
-        f'ssh {gpu_name} '
-        '"export CUDA_HOME=/vol/cuda/12.0.0 && '
-        'export LD_LIBRARY_PATH=/vol/cuda/12.0.0/targets/x86_64-linux/lib:$LD_LIBRARY_PATH && '
-        # Added this line to set log level
-        'export TF_CPP_MIN_LOG_LEVEL=3 && '  
-        f'source {conda_sh} && '
-        f'conda activate {env_name} && '
-        # Echo the gpu_name before running the script
-        # f'echo Running on {gpu_name} && '  
-        # Append the GPU name to the output
-        # 'nice -n 1' 
-        f'nice -n 1 python {python_script} '
-        f'--batch_size {scale_batch_size(gpu_name) * batch_size} --gpu {gpu_name} --cov {cov} '
-        f'--params {params[0]} {params[1]} {params[2]} {params[3]} {params[4]}'  
-        f' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
-    )
-    process = subprocess.Popen(command, shell=True)
+
+    if len(params)==7:
+        # print('Long Command')
+        long_command = (
+            f'ssh {gpu_name} '
+            '"export CUDA_HOME=/vol/cuda/12.0.0 && '
+            'export LD_LIBRARY_PATH=/vol/cuda/12.0.0/targets/x86_64-linux/lib:$LD_LIBRARY_PATH && '
+            # Added this line to set log level
+            'export TF_CPP_MIN_LOG_LEVEL=3 && '  
+            f'source {conda_sh} && '
+            f'conda activate {env_name} && '
+            # Echo the gpu_name before running the script
+            # f'echo Running on {gpu_name} && '  
+            # Append the GPU name to the output
+            # 'nice -n 1' 
+            f'nice -n 1 python {python_script} '
+            f'--batch_size {scale_batch_size(gpu_name) * batch_size} --gpu {gpu_name} --cov {cov} '
+            f'--num_scales {num_scales} --reps {reps} '
+            f'--params {params[0]} {params[1]} {params[2]} {params[3]} {params[4]}'
+            f' {params[5]} {params[6]}'  
+            f' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
+        )
+        process = subprocess.Popen(long_command, shell=True)
+    elif len(params)==5:
+        command = (
+            f'ssh {gpu_name} '
+            '"export CUDA_HOME=/vol/cuda/12.0.0 && '
+            'export LD_LIBRARY_PATH=/vol/cuda/12.0.0/targets/x86_64-linux/lib:$LD_LIBRARY_PATH && '
+            # Added this line to set log level
+            'export TF_CPP_MIN_LOG_LEVEL=3 && '  
+            f'source {conda_sh} && '
+            f'conda activate {env_name} && '
+            # Echo the gpu_name before running the script
+            # f'echo Running on {gpu_name} && '  
+            # Append the GPU name to the output
+            # 'nice -n 1' 
+            f'nice -n 1 python {python_script} '
+            f'--batch_size {scale_batch_size(gpu_name) * batch_size} --gpu {gpu_name} --cov {cov} '
+            f'--num_scales {num_scales} '
+            f'--params {params[0]} {params[1]} {params[2]} {params[3]} {params[4]}'
+            # f' {params[5]} {params[6]}'  
+            f' 2>&1 | sed \'s/^/[{gpu_name}] /\'"'  
+        )
+        process = subprocess.Popen(command, shell=True)
     
     if return_process:
         return process
@@ -112,12 +139,14 @@ def merge_intermediate_samples(gpu_names, desired_samples):
         all_images = np.ones((1,3,32,32))
         for file in files:
             full_path = os.path.join(dir_path,file)
-            data = np.load(full_path)
+            data = np.load(full_path, allow_pickle=True)
             images = data['images']
-            all_images = np.concatenate((all_images, images))
-        if all_images.shape[0]>=1000:
+            if images.shape[0] > 10:
+                all_images = np.concatenate((all_images, images))
+        if all_images.shape[0]>=desired_samples:
+            all_images = all_images[-desired_samples:]
             np.savez(os.path.join(dir_path, f'all_samples_{desired_samples}.npz'), 
-                     images=all_images[-desired_samples:])
+                     images=all_images)
         else:
             print(f'Incorrect size for {i}')
 

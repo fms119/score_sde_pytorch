@@ -444,16 +444,23 @@ class LangevinCorrector(Corrector):
         for i in range(n_steps):    
             # x.shape = (N, 3, 32, 32)
             grad = score_fn(x, t)
-            # noise.shape = (N, 3, 32, 32)
-            # noise = torch.randn_like(x).unsqueeze(-1)
+
+            # np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/grad_means/{(t * (sde.N - 1) / sde.T).long()[0].item()}', 
+            #          grad_mean=grad.cpu().numpy()
+            #          )
+
             reshaped_rvs = torch.randn((N, 32, 32, 3, 1)).to('cuda')
 
             correlated_noise, grad = self.precondition(reshaped_rvs, grad)
 
+            # np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/grad_means/cor_{(t * (sde.N - 1) / sde.T).long()[0].item()}', 
+            #          grad_mean=grad.cpu().numpy()
+            #          )
+
             grad_norm = torch.norm(
                 grad.reshape(grad.shape[0], -1), dim=-1
             ).mean()
-            # noise_norm: tensor.float64
+
             noise_norm = torch.norm(
                 correlated_noise.reshape(correlated_noise.shape[0], -1), dim=-1
             ).mean()
@@ -461,12 +468,17 @@ class LangevinCorrector(Corrector):
             step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
             
             x_mean = x + step_size[:, None, None, None] * grad
-            # noise added
+
             x = x_mean + torch.sqrt(step_size *
                                     2)[:, None, None, None] * correlated_noise
+            
+            # if (t * (sde.N - 1) / sde.T).long()[0] in [999, 300]:
+            #     time_save = (t * (sde.N - 1) / sde.T).long()[0]
+            #     print(f'saving {time_save}')
+            #     np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/700/{time_save}', 
+            #             images=x.cpu().numpy())
 
         return x, x_mean
-
 
 class ExploringCorrector(Corrector):
     def __init__(self, sde, score_fn, snr, n_steps):
@@ -539,7 +551,6 @@ class ExploringCorrector(Corrector):
         score_fn = self.score_fn
         n_steps = self.n_steps
         target_snr = self.snr
-        t_start = 700
 
         N = x.shape[0]
         if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
@@ -548,175 +559,41 @@ class ExploringCorrector(Corrector):
         else:
             alpha = torch.ones_like(t)
 
-        for i in range(n_steps):    
-            if (t * (sde.N - 1) / sde.T).long()[0]>t_start:
-                # Zoom through
-                return x, x
+        if self.start:
+            n_steps = int(self.explore_steps)
+            target_snr = 0.32
+            print(f'Exploring for {n_steps}')
 
-            elif (t * (sde.N - 1) / sde.T).long()[0]<t_start:
-                # x.shape = (N, 3, 32, 32)
-                grad = score_fn(x, t)
-                # noise.shape = (N, 3, 32, 32)
-                # noise = torch.randn_like(x).unsqueeze(-1)
-                reshaped_rvs = torch.randn((N, 32, 32, 3, 1)).to('cuda')
+        for i in range(n_steps):                
+            # np.savez('/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/700', 
+            #          images=x.cpu().numpy())
+            # print('Saves images at t = 700')
 
-                correlated_noise, grad = self.precondition(reshaped_rvs, grad)
-
-                grad_norm = torch.norm(
-                    grad.reshape(grad.shape[0], -1), dim=-1
-                ).mean()
-                # noise_norm: tensor.float64
-                noise_norm = torch.norm(
-                    correlated_noise.reshape(correlated_noise.shape[0], -1), dim=-1
-                ).mean()
-
-                step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
-                
-                x_mean = x + step_size[:, None, None, None] * grad
-                # noise added
-                x = x_mean + torch.sqrt(step_size *
-                                        2)[:, None, None, None] * correlated_noise
-            
-            elif (t * (sde.N - 1) / sde.T).long()[0]==t_start:
-                # np.savez('/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/700', 
-                #          images=x.cpu().numpy())
-                # print('Saves images at t = 700')
-                batch = x.shape[0]
-                x = np.load(
-                    '/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/700/700.npz'
-                    )['images'][:batch]
-                x = torch.tensor(x).to('cuda')
-                    # x.shape = (N, 3, 32, 32)
-                
-                target_snr = 0.32
-                print('Traversing typical set')
-
-                for _ in range(100):
-                    grad = score_fn(x, t)
-                    # noise.shape = (N, 3, 32, 32)
-                    # noise = torch.randn_like(x).unsqueeze(-1)
-                    reshaped_rvs = torch.randn((N, 32, 32, 3, 1)).to('cuda')
-
-                    correlated_noise, grad = self.precondition(reshaped_rvs, grad)
-
-                    grad_norm = torch.norm(
-                        grad.reshape(grad.shape[0], -1), dim=-1
-                    ).mean()
-                    # noise_norm: tensor.float64
-                    noise_norm = torch.norm(
-                        correlated_noise.reshape(correlated_noise.shape[0], -1), dim=-1
-                    ).mean()
-
-                    step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
-                    
-                    x_mean = x + step_size[:, None, None, None] * grad
-                    # noise added
-                    x = x_mean + torch.sqrt(step_size *
-                                            2)[:, None, None, None] * correlated_noise
-
-        return x, x_mean
-
-
-@register_corrector(name='rms')
-class RmsCorrector(Corrector):
-    def __init__(self, sde, score_fn, snr, n_steps):
-        super().__init__(sde, score_fn, snr, n_steps)
-        self.a = 0.9
-        self.l = 0.9
-        self.V = torch.zeros(3,32,32).to('cuda')
-        self.counter = 0
-        if not isinstance(sde, sde_lib.VPSDE) \
-                and not isinstance(sde, sde_lib.VESDE) \
-                and not isinstance(sde, sde_lib.subVPSDE):
-            raise NotImplementedError(
-                f"SDE class {sde.__class__.__name__} not yet supported.")
-
-    def update_fn(self, x, t):
-        sde = self.sde
-        score_fn = self.score_fn
-        n_steps = self.n_steps
-        target_snr = self.snr
-        N = x.shape[0]
-
-        if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
-            timestep = (t * (sde.N - 1) / sde.T).long()
-            alpha = sde.alphas.to(t.device)[timestep]
-        else:
-            alpha = torch.ones_like(t)
-
-        for i in range(n_steps):
+            # x.shape = (N, 3, 32, 32)
             grad = score_fn(x, t)
-            
-            if (t * (sde.N - 1) / sde.T).long()[0].item() < 30:
-                target_snr = 0.35
+            # noise.shape = (N, 3, 32, 32)
+            reshaped_rvs = torch.randn((N, 32, 32, 3, 1)).to('cuda')
 
-            self.V = (self.a*self.V) + (1-self.a)*(grad**2)
-            G = 1 / (self.l + torch.sqrt(self.V))
+            correlated_noise, grad = self.precondition(reshaped_rvs, grad)
 
-            grad = G * grad
-            noise = G * torch.randn_like(x)
+            grad_norm = torch.norm(
+                grad.reshape(grad.shape[0], -1), dim=-1
+            ).mean()
+            # noise_norm: tensor.float64
+            noise_norm = torch.norm(
+                correlated_noise.reshape(correlated_noise.shape[0], -1), dim=-1
+            ).mean()
 
-            if not (t * (sde.N - 1) / sde.T).long()[0].item() % 99:
-                print(f'Mean: {grad.mean()}, Std: {grad.std()}')
-            # grad_norm: float64
-            grad_norm = torch.norm(grad.reshape(
-                grad.shape[0], -1), dim=-1).mean()
-            noise_norm = torch.norm(noise.reshape(
-                noise.shape[0], -1), dim=-1).mean()
-            
             step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
+            
             x_mean = x + step_size[:, None, None, None] * grad
             # noise added
-            x = x_mean + torch.sqrt(step_size * 2)[:, None, None, None] * noise
+            x = x_mean + torch.sqrt(step_size *
+                                    2)[:, None, None, None] * correlated_noise
+        
 
         return x, x_mean
 
-
-
-
-
-
-
-
-
-
-
-@register_corrector(name='ald')
-class AnnealedLangevinDynamics(Corrector):
-    """The original annealed Langevin dynamics predictor in NCSN/NCSNv2.
-
-    We include this corrector only for completeness. It was not directly used in our paper.
-    """
-
-    def __init__(self, sde, score_fn, snr, n_steps):
-        super().__init__(sde, score_fn, snr, n_steps)
-        if not isinstance(sde, sde_lib.VPSDE) \
-                and not isinstance(sde, sde_lib.VESDE) \
-                and not isinstance(sde, sde_lib.subVPSDE):
-            raise NotImplementedError(
-                f"SDE class {sde.__class__.__name__} not yet supported.")
-
-    def update_fn(self, x, t):
-        sde = self.sde
-        score_fn = self.score_fn
-        n_steps = self.n_steps
-        target_snr = self.snr
-        if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
-            timestep = (t * (sde.N - 1) / sde.T).long()
-            alpha = sde.alphas.to(t.device)[timestep]
-        else:
-            alpha = torch.ones_like(t)
-
-        std = self.sde.marginal_prob(x, t)[1]
-
-        for i in range(n_steps):
-            grad = score_fn(x, t)
-            noise = torch.randn_like(x)
-            step_size = (target_snr * std) ** 2 * 2 * alpha
-            x_mean = x + step_size[:, None, None, None] * grad
-            x = x_mean + noise * torch.sqrt(step_size * 2)[:, None, None, None]
-
-        return x, x_mean
 
 
 @register_corrector(name='none')
@@ -791,7 +668,8 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
                                             snr=snr,
                                             n_steps=n_steps)
 
-    def pc_sampler(model, gpu_name, k_cha=0, k_spa=0, d_cha=1, d_spa=1):
+
+    def pc_sampler(model, gpu_name, k_cha=0, k_spa=0, d_cha=1, d_spa=1,):
         """ The PC sampler funciton.
 
         Args:
@@ -804,23 +682,122 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
             x = sde.prior_sampling(shape).to(device)
             timesteps = torch.linspace(sde.T, eps, sde.N, device=device)
 
-            # This is where I can save intermediate generations
             for i in range(sde.N):
-                if i%9999:
-                    corrector.cha_cov = k_cha * np.exp(-(i**2) / d_cha)
-                    corrector.spa_cov = k_spa * np.exp(-(i**2) / d_spa)
-                else:
-                    corrector.cha_cov = 0
-                    corrector.spa_cov = 0
+
+                corrector.cha_cov = k_cha * np.exp(-(i**2) / d_cha)
+                corrector.spa_cov = k_spa * np.exp(-(i**2) / d_spa)
+
                 t = timesteps[i]
                 vec_t = torch.ones(shape[0], device=t.device) * t
                 x, x_mean = corrector_update_fn(x, vec_t, model=model)
                 x, x_mean = predictor_update_fn(x, vec_t, model=model)
 
-                # if not (i+1)%10:
-                #     dir = (i+1)//10
-                #     np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/{dir}/{gpu_name}',
+                # if (not (i+1)%50) or (not i):
+                #     dir = (i+1)
+                #     print(f'Saving {dir}')
+                #     np.savez(f'/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_images/500t/{dir}.npz',
                 #              images=x_mean.cpu().numpy())
+                    
+            return inverse_scaler(x_mean if denoise else x), sde.N * (n_steps + 1)
+
+    return pc_sampler
+
+
+def get_pc_explorer(sde, shape, predictor, corrector, inverse_scaler, snr,
+                    n_steps=1, probability_flow=False, continuous=False,
+                    denoise=True, eps=1e-3, device='cuda', reps=0):
+    """Create a Predictor-Corrector (PC) sampler.
+
+    Args:
+            sde: An `sde_lib.SDE` object representing the forward SDE.
+            shape: A sequence of integers. The expected shape of a single sample.
+            predictor: A subclass of `sampling.Predictor` representing the predictor algorithm.
+            corrector: A subclass of `sampling.Corrector` representing the corrector algorithm.
+            inverse_scaler: The inverse data normalizer.
+            snr: A `float` number. The signal-to-noise ratio for configuring correctors.
+            n_steps: An integer. The number of corrector steps per predictor update.
+            probability_flow: If `True`, solve the reverse-time probability flow ODE when running the predictor.
+            continuous: `True` indicates that the score model was continuously trained.
+            denoise: If `True`, add one-step denoising to the final samples.
+            eps: A `float` number. The reverse-time SDE and ODE are integrated to `epsilon` to avoid numerical issues.
+            device: PyTorch device.
+
+    Returns:
+            A sampling function that returns samples and the number of function 
+            evaluations during sampling.
+    """
+    # Create predictor & corrector update functions
+    predictor_update_fn = functools.partial(shared_predictor_update_fn,
+                                            sde=sde,
+                                            predictor=predictor,
+                                            probability_flow=probability_flow,
+                                            continuous=continuous)
+    # corrector_update_fn now takes: model, x, t
+    corrector_update_fn = functools.partial(shared_corrector_update_fn,
+                                            sde=sde,
+                                            corrector=corrector,
+                                            continuous=continuous,
+                                            snr=snr,
+                                            n_steps=n_steps)
+
+
+    def pc_sampler(model, gpu_name, k_cha=0, k_spa=0, d_cha=1, d_spa=1, t_start=9, explore_steps=100):
+        """ The PC sampler funciton.
+
+        Args:
+                model: A score model.
+        Returns:
+                Samples, number of function evaluations.
+        """
+        with torch.no_grad():
+            # Initial sample
+            timesteps = torch.linspace(sde.T, eps, sde.N, device=device)
+
+            t_init = round( (10*t_start) / sde.N )
+            print(f't_init is {t_init}')
+
+            if reps > 1000:
+                x = np.load(
+                    '/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_'
+                    f'images/700/000_{int(reps - 1000)}.npz'
+                    )['images'][:shape[0]].astype('float32')
+
+                sigma = (((0.01**2) * ((50/0.01)**(2*0.7))) ** 0.5)
+
+                x += np.random.uniform(0, 1, (shape[0], 3, 32, 32))
+                x /= 256
+                x += np.random.randn(shape[0], 3, 32, 32) * sigma
+                print(f'Using {reps} noised repeated inits')
+            elif reps:
+                x = np.load(
+                    '/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_'
+                    f'images/700/{t_init}00_{int(reps)}.npz'
+                    )['images'][:shape[0]]
+                print(f'Using {reps} repeated inits')
+            else:
+                x = np.load(
+                    '/vol/bitbucket/fms119/score_sde_pytorch/samples/intermediate_'
+                    f'images/700/{t_init}00.npz'
+                    )['images'][:shape[0]]
+            
+            x = torch.tensor(x).to(device)  
+
+            corrector.explore_steps = explore_steps
+            # print(f'The number of explore steps is {corrector.explore_steps}')
+            corrector.start = True
+            print(f'i in range({int(sde.N-t_start)},{sde.N})')
+            for i in range(int(sde.N-t_start), sde.N, 1):
+            # for i in range(int(t_start), sde.N, 1):
+                
+                corrector.cha_cov = k_cha * np.exp(-(i**2) / d_cha)
+                corrector.spa_cov = k_spa * np.exp(-(i**2) / d_spa)
+                
+                t = timesteps[i]
+                vec_t = torch.ones(shape[0], device=t.device) * t
+                x, x_mean = corrector_update_fn(x, vec_t, model=model)
+                x, x_mean = predictor_update_fn(x, vec_t, model=model)
+
+                corrector.start = False
                     
             return inverse_scaler(x_mean if denoise else x), sde.N * (n_steps + 1)
 

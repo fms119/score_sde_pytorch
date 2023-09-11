@@ -12,13 +12,14 @@ from generate_samples_functions import *
 
 print(datetime.now())
 
-desired_samples = 3000
+time.sleep(30)
+
 batch_size = 180
 cov = 0
 
 # list of GPU IDs and corresponding names
 # GTX_TITAN_X = [f'0{i}' for i in range(1,10)] + ['10', '11', '12', '13']
-# RTX_2080_ti = ['18', '19', '20', '21', '22', '29', '30',]
+RTX_2080_ti = ['18', '19', '20', '21', '22', '29', '30',]
 # GTX_1080 = ['15', '14', '16', '17', '23', '24']
 # gpu_ids = GTX_TITAN_X + RTX_2080_ti + GTX_1080
 
@@ -29,12 +30,23 @@ ray_machines = ([f'ray0{i}' for i in range(1, 7)]
 # gpu_ids = ['30', '18', '22', '14', '15','16','17']
 
 gpu_names = ray_machines #+ ['gpu'+n for n in gpu_ids]
-gpu_names.remove('ray23')
-gpu_names.remove('ray08')
-gpu_names.remove('ray04')
-gpu_names.remove('ray10')
-# gpu_names.remove('ray01')
+
+# gpu_names.remove('ray26')
+# gpu_names.remove('ray13')
+# gpu_names.remove('ray16')
+# gpu_names.remove('ray22')
+gpu_names.remove('ray01')
+# gpu_names.remove('ray02')
 gpu_names.remove('ray05')
+gpu_names.remove('ray06')
+# gpu_names.remove('ray08')
+# gpu_names.remove('ray07')
+gpu_names.remove('ray09')
+# gpu_names.remove('ray22')
+# gpu_names.remove('ray11')
+
+# gpu_names.remove('ray10')
+
 
 # path to your python script
 python_script = ('/homes/fms119/Projects/doc_msc_project/'
@@ -45,17 +57,33 @@ conda_sh = "/vol/bitbucket/fms119/miniconda3/etc/profile.d/conda.sh"
 # the name of the environment to activate
 env_name = "score_sde_env"
 
-save_samples_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/'
-                     f'all_samples_{desired_samples}.npz')
-
 parser = argparse.ArgumentParser(
 	description='Give hyperparameters for optuna trial'
 	)
-parser.add_argument('-p', '--params', nargs='+', default=[0,0,1,1, 0.16], 
+parser.add_argument('-p', '--params', nargs='+', default=[0,0,1,1,0.16], 
 					help='optuna params list')
 parser.add_argument('-s', '--split', type=int, default=0, 
 					help='split gpu_names into s')
+parser.add_argument('-N', '--num_scales', type=int, 
+                    default=500,
+                    help='Number of images to be generated per machine')
+
+parser.add_argument('-r', '--reps', type=int, 
+                    default=0,
+                    help='Number of images to be generated per machine')
+
+parser.add_argument('-d', '--desired_samples', type=int, 
+                    default=5001,
+                    help='Number of images to be generated per machine')
+
+parser.add_argument('-f', '--fid', type=bool, default=False, 
+					help='Should the FID be computed for this generation?')
 args = parser.parse_args()
+
+desired_samples = args.desired_samples
+
+save_samples_path = ('/vol/bitbucket/fms119/score_sde_pytorch/samples/'
+                     f'all_samples_{desired_samples}.npz')
 
 # Testing to see if shuffling the gpu names has an effect on rays being left 
 # out
@@ -68,6 +96,10 @@ if args.split:
     gpu_names = gpu_names[(args.split-1) * allocation:
                           (args.split) * allocation]
     save_samples_path = save_samples_path[:-4] + f'_{args.split}.npz'
+    if args.split==3:
+        print('Using fast GPUS')
+        gpu_names = ['gpu'+n for n in RTX_2080_ti]
+        save_samples_path = save_samples_path[:-4] + f'_{args.split}.npz'
 
 # Set batch size
 if len(gpu_names)>5:
@@ -106,7 +138,9 @@ print(f'The length of gpu_names is {len(gpu_names)}')
 for i in range(len(gpu_names)):
     start_process(i, gpu_names, conda_sh, env_name, python_script,
                   processes, batch_size=batch_size, cov=cov, 
-                  params=args.params)
+                  params=args.params, num_scales=args.num_scales,
+                  reps=args.reps)
+    time.sleep(1)
 
 all_images = np.zeros((1,3,32,32))
 
@@ -128,7 +162,7 @@ while processes:
                         + gpu_names[i] + '_samples.npz')
 
             # Try to load the data file for up to 5 seconds
-            delay_time = 20
+            delay_time = 60
             for t in range(delay_time):
                 try:
                     data = np.load(file_path)  # Try to load the data file
@@ -153,12 +187,12 @@ while processes:
                 # Save progress
                 np.savez(save_samples_path, images=all_images[1:])
                 
-                print(f'{gpu_names[i]} has obtained good images.')
+                # print(f'{gpu_names[i]} has obtained good images.')
                 no_good_images = all_images.shape[0] - 1
                 print(f'Collected {no_good_images} of  {desired_samples} images.')
                 estimate_end(no_good_images, desired_samples, start_time)
-                print(f'Maximum: {all_images.max()}')
-                print(f'Minimum: {all_images.min()}')
+                # print(f'Maximum: {all_images.max()}')
+                # print(f'Minimum: {all_images.min()}')
                 
                 # If we have enough samples, break
                 if all_images.shape[0]>=desired_samples:
@@ -172,7 +206,9 @@ while processes:
                                          env_name, python_script, 
                                          processes, return_process=True, 
                                          batch_size=batch_size, cov=cov,
-                                         params=args.params)
+                                         params=args.params, 
+                                         num_scales=args.num_scales,
+                                         reps=args.reps)
             # print(f'[{gpu_names[i]}] The next PID is {processes[i].pid}')
             
             try:
@@ -194,10 +230,19 @@ np.savez(save_samples_path, images=all_images)
 
 time.sleep(20)
 
-merge_intermediate_samples(gpu_names, desired_samples)
-
 cleanup_wrapper()
 
-# from TEMPint_fids import * 
+# print('Merging samples')
+# merge_intermediate_samples(gpu_names, desired_samples)
 
-# Maybe I should add a compute FID step here??
+if args.fid:
+    from fid_size_experiment import get_fid 
+    fid = get_fid(file_path=save_samples_path)
+    params = [float(x) for x in args.params]
+    save_fid_path = ('/vol/bitbucket/fms119/score_sde_pytorch/assets/stats/'
+                     f'large_gen_fids/{args.num_scales}_{params[-4]}_{params[-3]}_'
+                     f'{params[-2]}_{params[-1]}_{desired_samples}_{args.reps}.npz')
+    np.savez(save_fid_path, fid=fid)
+    print(fid)
+
+

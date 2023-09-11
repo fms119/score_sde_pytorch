@@ -34,6 +34,7 @@ def get_default_configs():
   evaluate.batch_size = 1024
   evaluate.batch_size = 128
 
+
   evaluate.enable_sampling = False
 
   evaluate.num_samples = 50000
